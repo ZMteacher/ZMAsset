@@ -1,0 +1,87 @@
+[
+  {
+    "fileName": "Android",
+    "md5": "7B7A7FC6336BE1690667D85F42639503",
+    "size": 2.0
+  },
+  {
+    "fileName": "gameitembundleconfig.uab",
+    "md5": "43D279C1B0848A10D68DEDA893D56D36",
+    "size": 3.0
+  },
+  {
+    "fileName": "hallbundleconfig.uab",
+    "md5": "7818B85685136F97E9AFC72A147E3ECC",
+    "size": 3.0
+  },
+  {
+    "fileName": "hall_examplewindow.uab",
+    "md5": "15FA0EEBD174A2047A1F9800C7CFA065",
+    "size": 10.0
+  },
+  {
+    "fileName": "hall_examplewindow1.uab",
+    "md5": "ECC6A11B0959D388420C94EE7DD232B3",
+    "size": 10.0
+  },
+  {
+    "fileName": "hall_exshopitem.uab",
+    "md5": "3DF55297192BEE169A560ED929EC8B8D",
+    "size": 4.0
+  },
+  {
+    "fileName": "hall_exshopwindow.uab",
+    "md5": "36AAC3617432BF500F6D70B117C6E236",
+    "size": 13.0
+  },
+  {
+    "fileName": "hall_hall.uab",
+    "md5": "1E7C81D63BCE71B39893B78BD77AF3A9",
+    "size": 1784.0
+  },
+  {
+    "fileName": "hall_halldata.uab",
+    "md5": "A07AD6844D1E8A34E43DB1D20DE2DC1F",
+    "size": 1.0
+  },
+  {
+    "fileName": "hall_hallwindow.uab",
+    "md5": "C3C7220633AE28A8D1ADB4A9ED7BC81C",
+    "size": 22.0
+  },
+  {
+    "fileName": "hall_hotscript.uab",
+    "md5": "DDD65567B60FBF03A9C1BEE6894B5D8F",
+    "size": 37.0
+  },
+  {
+    "fileName": "hall_loading.uab",
+    "md5": "CEEDC603B0190EC1DA193304C2C6518B",
+    "size": 628.0
+  },
+  {
+    "fileName": "hall_login.uab",
+    "md5": "E6432DE78A615F539A75BBC68066B731",
+    "size": 1110.0
+  },
+  {
+    "fileName": "hall_loginwindow.uab",
+    "md5": "3D1189689B6CC452773498BD7E81B8B6",
+    "size": 14.0
+  },
+  {
+    "fileName": "hall_scene.uab",
+    "md5": "454FCCC09980934B933FA1440B2BE6F5",
+    "size": 50.0
+  },
+  {
+    "fileName": "hall_shop.uab",
+    "md5": "ED59D870E062028531E67B5FFEC6F146",
+    "size": 562.0
+  },
+  {
+    "fileName": "hall_testobj.uab",
+    "md5": "D7634A49A6B03561DD7B32917F40032B",
+    "size": 3.0
+  }
+]
