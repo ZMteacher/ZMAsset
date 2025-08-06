@@ -70,7 +70,7 @@ public class BuildBundleConfigura : ScriptableObject
                 break;
             }
         }
-
+        Save();
     }
     /// <summary>
     /// 储存新的模块资源
@@ -96,7 +96,7 @@ public class BuildBundleConfigura : ScriptableObject
      
         Save();
     }
-    public void Save()
+    private void Save()
     {
 #if UNITY_EDITOR
         EditorUtility.SetDirty(this);
