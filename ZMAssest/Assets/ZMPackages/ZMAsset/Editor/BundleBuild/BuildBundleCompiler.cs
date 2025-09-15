@@ -201,7 +201,7 @@ namespace ZM.ZMAsset
                     //获取文件夹同名的AssetBundle名称
                     string bundleName = GenerateBundleName(path.Substring(nameIndex, path.Length - nameIndex));
                     //处理子文件夹资源的代码
-                    string[] filePathArr = Directory.GetFiles(path, "*");
+                    string[] filePathArr = Directory.GetFiles(path, "*",SearchOption.AllDirectories);
                     foreach (var filePath in filePathArr)
                     {
                         //过滤.meta文件
