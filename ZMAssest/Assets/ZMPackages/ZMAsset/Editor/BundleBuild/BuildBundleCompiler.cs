@@ -715,17 +715,17 @@ namespace ZM.ZMAsset
             File.Copy(hotMainifestPath,outPutPath+BundleSettings.Instance.HotManifestName(_mBundleModuleName,(BuildTarget)mBuildTarget));
         }
 
-        [MenuItem("ZMFrame/BundleFolder")]
+        [MenuItem("ZM/BundleFolder")]
         public static void OpenAssetBundleFolder()
         {
             EditorUtility.RevealInFinder(Application.dataPath + "/../AssetBundle/");
         }
-        [MenuItem("ZMFrame/HotBundleFolder")]
+        [MenuItem("ZM/HotBundleFolder")]
         public static void OpenHotBundleFolder()
         { 
             EditorUtility.RevealInFinder(Application.dataPath + "/../HotAssets/");
         }
-        [MenuItem("ZMFrame/PersistentFolder")]
+        [MenuItem("ZM/PersistentFolder")]
         public static void OpenPersistentFolder()
         { 
             EditorUtility.RevealInFinder(Application.persistentDataPath+"/");

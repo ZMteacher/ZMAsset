@@ -29,7 +29,7 @@ public class BuildWindows : OdinMenuEditorWindow
     [SerializeField]
     public BundleSettings settingWindow ;
 
-    [MenuItem("ZMFrame/Build BundleWindow",false,0)]
+    [MenuItem("ZM/Build BundleWindow",false,0)]
     public static void ShowAssetBundleWindow()
     {
         try
