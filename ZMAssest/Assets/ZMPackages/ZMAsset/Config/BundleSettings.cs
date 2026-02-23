@@ -4,7 +4,7 @@
 *
 * Description: 可视化多模块打包器、多模块热更、多线程下载、多版本热更、多版本回退、加密、解密、内嵌、解压、内存引用计数、大型对象池、AssetBundle加载、Editor加载
 *
-* Author: 铸梦xy
+* Author: ZM
 *
 * Date: 2023.4.13
 *
@@ -15,6 +15,7 @@ using System.Collections;
 using System.Collections.Generic;
 using System.IO;
 using System.Reflection;
+using UnityEditor;
 using UnityEngine;
 using ZM.ZMAsset;
 /// <summary>
@@ -102,52 +103,53 @@ public class BundleSettings : ScriptableObject
     /// <summary>
     /// 获取资源内嵌的路径
     /// </summary>
-    /// <param name="moduleEnum"></param>
+    /// <param name="moduleName"></param>
     /// <returns></returns>
-    public string GetAssetsBuiltinBundlePath(BundleModuleEnum moduleEnum)
+    public string GetAssetsBuiltinBundlePath(string moduleName)
     {
-        return BuiltinAssetsPath + moduleEnum + "/";
+        return BuiltinAssetsPath + moduleName + "/";
     }
     /// <summary>
     /// 获取解压文件路径(Unity2019 支持直接都streamingAssetsPath目录下Bundle)
     /// </summary>
-    /// <param name="moduleEnum"></param>
+    /// <param name="moduleName"></param>
     /// <returns></returns>
-    public string GetAssetsDecompressPath(BundleModuleEnum moduleEnum)
+    public string GetAssetsDecompressPath(string moduleName)
     {
 #if UNITY_2020_1_OR_NEWER
-        return $"{Application.persistentDataPath}/DecompressAssets/{moduleEnum.ToString()}/";
+        return $"{Application.persistentDataPath}/DecompressAssets/{moduleName.ToString()}/";
 #else
-        return BundleDecompressPath + moduleEnum + "/";
+        return BundleDecompressPath + moduleName + "/";
 #endif
         
     }
     /// <summary>
     /// 获取热更文件储存路径
     /// </summary>
-    /// <param name="moduleEnum"></param>
+    /// <param name="moduleName"></param>
     /// <returns></returns>
-    public string GetHotAssetsPath(BundleModuleEnum moduleEnum)
+    public string GetHotAssetsPath(string moduleName)
     {
-        return HotAssetsPath + moduleEnum + "/";
+        return HotAssetsPath + moduleName + "/";
     }
     /// <summary>
     /// 获取配置文件名称
     /// </summary>
-    /// <param name="moduleEnum"></param>
+    /// <param name="moduleName"></param>
     /// <returns></returns>
-    public string GetBundleCfgName(BundleModuleEnum moduleEnum)
+    public string GetBundleCfgName(string moduleName)
     {
-        return $"{moduleEnum.ToString().ToLower()}bundleconfig{ABSUFFIX}";
+        return $"{moduleName.ToLower()}bundleconfig{ABSUFFIX}";
     }
     /// <summary>
     /// 热更清单文件名称
     /// </summary>
-    /// <param name="moduleEnum"></param>
-    /// <returns></returns>
-    public string HotManifestName(BundleModuleEnum moduleEnum)
+    /// <param name="moduleName"></param>
+    /// <returns></ returns>
+    public string HotManifestName(string moduleName, BuildTarget target= BuildTarget.NoTarget)
     {
-        return $"{moduleEnum}AssetsHotManifest_{GetPlatformName()}.json";
+        string platformName = target == BuildTarget.NoTarget ? GetPlatformName() : target.ToString();
+        return $"{moduleName}AssetsHotManifest_{platformName}.json";
     }
 
     /// <summary>
@@ -170,6 +172,14 @@ public class BundleSettings : ScriptableObject
 #endif
         return platformName;
     }
+
+    public void Save()
+    {
+#if UNITY_EDITOR
+        EditorUtility.SetDirty(this);
+        AssetDatabase.SaveAssetIfDirty(this);
+#endif
+    }
 }
 
 [System.Serializable,Toggle("isEncrypt")]
@@ -183,6 +193,7 @@ public class BundleEncryptToggle
 
 public enum BuildTarget
 {
+    NoTarget = -2, // 0xFFFFFFFE
     //
     // 摘要:
     //     OBSOLETE: Use iOS. Build an iOS player.

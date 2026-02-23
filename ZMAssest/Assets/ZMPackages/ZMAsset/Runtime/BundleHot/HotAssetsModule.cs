@@ -4,7 +4,7 @@
 *
 * Description: 可视化多模块打包器、多模块热更、多线程下载、多版本热更、多版本回退、加密、解密、内嵌、解压、内存引用计数、大型对象池、AssetBundle加载、Editor加载
 *
-* Author: 铸梦xy
+* Author: ZM
 *
 * Date: 2023.4.13
 *
@@ -33,7 +33,7 @@ namespace ZM.ZMAsset
         /// <summary>
         /// 热更资源下载储存路径
         /// </summary>
-        public string HotAssetsSavePath { get { return Application.persistentDataPath + "/HotAssets/" + CurBundleModuleEnum + "/"; } }
+        public string HotAssetsSavePath { get { return Application.persistentDataPath + "/HotAssets/" + CurBundleModuleName + "/"; } }
         /// <summary>
         /// 所有热更的资源列表
         /// </summary>
@@ -65,7 +65,7 @@ namespace ZM.ZMAsset
         /// <summary>
         /// 当前下载的资源模块类型
         /// </summary>
-        public BundleModuleEnum CurBundleModuleEnum { get; set; }
+        public string CurBundleModuleName { get; set; }
         /// <summary>
         /// 最大下载资源大小
         /// </summary>
@@ -95,11 +95,11 @@ namespace ZM.ZMAsset
         /// <summary>
         /// 下载所有资源完成的回调
         /// </summary>
-        public Action<BundleModuleEnum> OnDownLoadAllAssetsFinish;
-        public HotAssetsModule(BundleModuleEnum bundleModule,MonoBehaviour mono)
+        public Action<string> OnDownLoadAllAssetsFinish;
+        public HotAssetsModule(string bundleModule,MonoBehaviour mono)
         {
             mMono = mono;
-            CurBundleModuleEnum = bundleModule;
+            CurBundleModuleName = bundleModule;
             mAppVersion = Application.version;
         }
         /// <summary>
@@ -108,7 +108,7 @@ namespace ZM.ZMAsset
         /// <param name="startDownLoadCallback">开始下载的回调</param>
         /// <param name="hotFinish">热更完成回调</param>
         /// <param name="isCheckAssetsVersion">是否检测资源版本</param>
-        public void StartHotAssets(Action startDownLoadCallback,Action<BundleModuleEnum> hotFinish=null,bool isCheckAssetsVersion=true)
+        public void StartHotAssets(Action startDownLoadCallback,Action<string> hotFinish=null,bool isCheckAssetsVersion=true)
         {
             this.OnDownLoadAllAssetsFinish += hotFinish;
             if (isCheckAssetsVersion)
@@ -121,7 +121,7 @@ namespace ZM.ZMAsset
                     }
                     else
                     {
-                        OnDownLoadAllAssetsFinish?.Invoke(CurBundleModuleEnum);
+                        OnDownLoadAllAssetsFinish?.Invoke(CurBundleModuleName);
                     }
                 });
             }
@@ -158,6 +158,7 @@ namespace ZM.ZMAsset
             {
                 downLoadQueue.Enqueue(item);
             }
+            
             //通过资源下载器，开始下载资源
             mAssetsDownLoader = new AssetsDownLoader(this,downLoadQueue,mServerHotAssetsManifest.downLoadURL,HotAssetsSavePath,DownLoadAssetBundleSuccess,DownLoadAssetBundleFailed,DownLoadAllAssetBundleFinish);
 
@@ -216,7 +217,7 @@ namespace ZM.ZMAsset
                 //获取本地AssetBundle文件路径
                 string localHotFilePath = HotAssetsSavePath + item.abName;
                 //获取本地解压后的AssetBundle文件路径
-                string localCompressFilePath = BundleSettings.Instance.GetAssetsDecompressPath(CurBundleModuleEnum)+ item.abName;
+                string localCompressFilePath = BundleSettings.Instance.GetAssetsDecompressPath(CurBundleModuleName)+ item.abName;
                 mAllHotAssetsList.Add(item);
                 //如果本地热更文件不存在，或者本地文件与服务端不一致 就需要热更
                 if (!File.Exists(localHotFilePath) ||item.md5!= MD5.GetMd5FromFile(localHotFilePath))//验证资源是否损、是否需要热更坏或被篡改
@@ -246,13 +247,13 @@ namespace ZM.ZMAsset
             //资源应用版本不一致
             if (mServerHotAssetsManifest.appVersion!=mAppVersion && mServerHotAssetsManifest.appVersion!="0.0.0")
             {
-                Debug.Log($"应用版本不一致，{CurBundleModuleEnum} 不需要热更");
+                Debug.Log($"应用版本不一致，{CurBundleModuleName} 不需要热更");
                 return false;
             }
             //全版本生效热更
             if ( mServerHotAssetsManifest.appVersion=="0.0.0")
             {
-                Debug.Log($"{CurBundleModuleEnum} 属于全版本热更资源，计算热更需要下载的文件");
+                Debug.Log($"{CurBundleModuleName} 属于全版本热更资源，计算热更需要下载的文件");
             }
             //如果本地资源清单文件不存在，说明我们需要热更
             if (!File.Exists(mLocalHotAssetManifestPath))
@@ -294,7 +295,7 @@ namespace ZM.ZMAsset
         /// <returns></returns>
         private IEnumerator DownLoadHotAssetsManifest(Action downLoadFinish)
         {
-            string url = $"{BundleSettings.Instance.AssetBundleDownLoadUrl}/HotAssets/{CurBundleModuleEnum}/{BundleSettings.Instance.HotManifestName(CurBundleModuleEnum)}";
+            string url = $"{BundleSettings.Instance.AssetBundleDownLoadUrl}/HotAssets/{CurBundleModuleName}/{BundleSettings.Instance.HotManifestName(CurBundleModuleName)}";
             UnityWebRequest webRequest = UnityWebRequest.Get(url);
             webRequest.timeout = 30;
             Debug.Log("*** Requset HotAssetsMainfest Url:"+ url);
@@ -314,7 +315,7 @@ namespace ZM.ZMAsset
                 string downLoadContent = webRequest.downloadHandler.text;
                 try
                 {
-                    Debug.Log($"*** Request AssetBundle HotAssetsMainfest Url Finish Module:{CurBundleModuleEnum} txt:{downLoadContent}");
+                    Debug.Log($"*** Request AssetBundle HotAssetsMainfest Url Finish Module:{CurBundleModuleName} txt:{downLoadContent}");
                     //写入服务端资源热更清单到本地
                     FileHelper.WriteFileAsync(mServerHotAssetsManifestPath, downLoadContent);
                     if (!string.IsNullOrEmpty(downLoadContent) && downLoadContent.Contains("md5"))
@@ -330,8 +331,8 @@ namespace ZM.ZMAsset
         }
         public void GeneratorHotAssetsManifest()
         {
-            mServerHotAssetsManifestPath = Application.persistentDataPath + "/Server" + CurBundleModuleEnum + "AssetsHotManifest.json";
-            mLocalHotAssetManifestPath = Application.persistentDataPath + "/Local" + CurBundleModuleEnum + "AssetsHotManifest.json";
+            mServerHotAssetsManifestPath = Application.persistentDataPath + "/Server" + CurBundleModuleName + "AssetsHotManifest.json";
+            mLocalHotAssetManifestPath = Application.persistentDataPath + "/Local" + CurBundleModuleName + "AssetsHotManifest.json";
         }
 
 #region 资源下载回调
@@ -345,7 +346,7 @@ namespace ZM.ZMAsset
                 
             if (hotFile.abName.Contains("bundleconfig"))
             {
-                await ZMAsset.InitAssetsModule(CurBundleModuleEnum);//如果下载成功需要及时初始化模块配置
+                await ZMAsset.InitAssetsModule(CurBundleModuleName);//如果下载成功需要及时初始化模块配置
                 OnDownLoadABConfigListener?.Invoke(abName);
             }
             else
@@ -368,7 +369,7 @@ namespace ZM.ZMAsset
             }
             //把服务端热更清单文件考本到本地
             File.Copy(mServerHotAssetsManifestPath, mLocalHotAssetManifestPath);
-            OnDownLoadAllAssetsFinish?.Invoke(CurBundleModuleEnum);
+            OnDownLoadAllAssetsFinish?.Invoke(CurBundleModuleName);
         }
 #endregion
 
@@ -382,7 +383,7 @@ namespace ZM.ZMAsset
         /// <param name="threadCount"></param>
         public void SetDownLoadThreadCount(int threadCount)
         {
-            Debug.Log("多线程负载均衡:"+threadCount+" ModuleType:"+CurBundleModuleEnum);
+            Debug.Log("多线程负载均衡:"+threadCount+" ModuleType:"+CurBundleModuleName);
             if (mAssetsDownLoader!=null)
             {
                 mAssetsDownLoader.MAX_THREAD_COUNT = threadCount;

@@ -4,7 +4,7 @@
 *
 * Description: 可视化多模块打包器、多模块热更、多线程下载、多版本热更、多版本回退、加密、解密、内嵌、解压、内存引用计数、大型对象池、AssetBundle加载、Editor加载
 *
-* Author: 铸梦xy
+* Author: ZM
 *
 * Date: 2023.4.13
 *
@@ -16,7 +16,10 @@ using System.Collections.Generic;
 using System.IO;
 using System.Security.Cryptography;
 using System.Text;
+using System.Threading.Tasks;
+using Cysharp.Threading.Tasks;
 using UnityEngine;
+using UnityEngine.Networking;
 
 namespace ZM.ZMAsset
  {
@@ -109,7 +112,51 @@ namespace ZM.ZMAsset
 	            Debug.LogError(e);
 	        }
 	    }
-	
+		public static async Task<byte[]> AESFileByteDecryptAwait(string path, string EncrptyKey,bool isHotPath)
+        {
+      
+            byte[] DecBuffer = null;
+            try
+            {
+                string filePath = "";
+                
+ #if  UNITY_EDITOR_OSX || UNITY_IOS
+                filePath = "file://" +path;
+#else 
+                //filePath = path;
+	            filePath= isHotPath?"file://" +path:path;
+#endif
+	            
+                Debug.Log("AESFileByteDecryptAwait LoadStreamingFile  filePath" + filePath);
+                UnityWebRequest unityWebRequest = UnityWebRequest.Get(filePath);
+                unityWebRequest.timeout = 30;
+				await  unityWebRequest.SendWebRequest();
+                Debug.Log("AESFileByteDecryptAwait LoadStreaming  filePath Success" + unityWebRequest.downloadHandler.data.Length +"   "+unityWebRequest.downloadHandler.text);
+                using (MemoryStream fs = new MemoryStream(unityWebRequest.downloadHandler.data))
+                {
+                    if (fs != null)
+                    {
+                        byte[] headBuff = new byte[10];
+                        fs.Read(headBuff, 0, headBuff.Length);
+                        string headTag = Encoding.UTF8.GetString(headBuff);
+                        if (headTag == AESHead)
+                        {
+                            byte[] buffer = new byte[fs.Length - headBuff.Length];
+                            fs.Read(buffer, 0, Convert.ToInt32(fs.Length - headBuff.Length));
+                            DecBuffer = AESDecrypt(buffer, EncrptyKey);
+                        }
+                    }
+                    Debug.Log("AESFileByteDecryptAwait 解密完成" + DecBuffer.Length);
+                }
+            }
+            catch (Exception e)
+            {
+                Debug.LogError("解密失败："+e);
+            }
+
+            return DecBuffer;
+        }
+
 	    /// <summary>
 	    /// 文件解密，传入文件路径，返回字节
 	    /// </summary>

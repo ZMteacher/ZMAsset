@@ -4,7 +4,7 @@
 *
 * Description: 可视化多模块打包器、多模块热更、多线程下载、多版本热更、多版本回退、加密、解密、内嵌、解压、内存引用计数、大型对象池、AssetBundle加载、Editor加载
 *
-* Author: 铸梦xy
+* Author: ZM
 *
 * Date: 2023.4.13
 *
@@ -33,6 +33,10 @@ namespace ZM.ZMAsset
         /// 下载地址
         /// </summary>
         public string downLoadURL;
+        /// <summary>
+        /// 存放文件夹
+        /// </summary>
+        public string saveFolder;
         /// <summary>
         /// 热更资源补丁列表
         /// </summary>

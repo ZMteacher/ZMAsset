@@ -22,8 +22,7 @@ namespace ZM.ZMAsset
         private IHotAssets mHotAssets = null;
 
         private IResourceInterface mResource = null;
-
-        private IDecompressAssets mDecompressAssets = null;
+ 
         /// <summary>
         /// 初始化框架
         /// </summary>
@@ -37,14 +36,14 @@ namespace ZM.ZMAsset
             
             //热更资源管理器
             mHotAssets = new HotAssetsManager();
-            //资源解压管理器
-            mDecompressAssets =new  AssetsDecompressManager();
+        
             //资源加载管理器
             var resource= new ResourceManager();
             mResource = resource;
             ZMAddressableAsset.Interface = resource;
             //初始化资源管理器
             mResource.Initlizate();
+            Debug.Log("ZMAsset Initialize Success!");
         }
 
         public void Update()

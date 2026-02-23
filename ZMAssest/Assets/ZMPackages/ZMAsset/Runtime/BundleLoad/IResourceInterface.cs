@@ -4,12 +4,13 @@
 *
 * Description: 可视化多模块打包器、多模块热更、多线程下载、多版本热更、多版本回退、加密、解密、内嵌、解压、内存引用计数、大型对象池、AssetBundle加载、Editor加载
 *
-* Author: 铸梦xy
+* Author: ZM
 *
 * Date: 2023.4.13
 *
-* Modify: 
+* Modify:
 ------------------------------------------------------------------------------------------------------------------------------------------------*/
+
 using System;
 using Cysharp.Threading.Tasks;
 using UnityEngine;
@@ -17,57 +18,64 @@ using UnityEngine.SceneManagement;
 using UnityEngine.UI;
 using ZM.ZMAsset;
 
-public interface IResourceInterface  
+namespace ZM.ZMAsset
 {
-    void Initlizate();
+    public interface IResourceInterface
+    {
+        void Initlizate();
 
-    UniTask<bool> InitAssetModule(BundleModuleEnum bundleModule,bool isAddressableAsset = false);
+        UniTask<bool> InitAssetModule(string bundleModule, bool isAddressableAsset = false);
 
-    void PreLoadObj(string path,int count=1);
+        void PreLoadObj(string path, int count = 1);
 
-    UniTask PreLoadObjAsync(string path, int count = 1);
+        UniTask PreLoadObjAsync(string path, int count = 1);
 
-    void PreLoadResource<T>(string path) where T : UnityEngine.Object;
+        void PreLoadResource<T>(string path) where T : UnityEngine.Object;
 
-    GameObject Instantiate(string path, Transform parent, Vector3 localPoition, Vector3 localScale, Quaternion quaternion);
+        GameObject Instantiate(string path, Transform parent, Vector3 localPoition, Vector3 localScale,
+            Quaternion quaternion);
 
-    void InstantiateAsync(string path, Transform parent, Action<GameObject, object, object> loadAsync, object param1, object param2);
+        void InstantiateAsync(string path, Transform parent, Action<GameObject, object> loadAsync,
+            object param1);
 
-    UniTask<AssetsRequest> InstantiateAsync(string path,Transform parent,  object param1, object param21, object param2);
-    
-    long InstantiateAndLoad(string path,Transform parent, Action<GameObject, object, object> loadAsync, Action loading, object param1, object param2);
-    UniTask<T> LoadResourceAsync<T>(string path) where T : UnityEngine.Object;
+        UniTask<AssetsRequest> InstantiateAsync(string path, Transform parent, object param1, object param21,
+            object param2);
 
-    //Task<T> LoadResourceAsyncAas<T>(string path, BundleModuleEnum moduleEnum ) where T : UnityEngine.Object;
-    void RemoveObjectLoadCallBack(long loadid);
+        long InstantiateAndLoad(string path, Transform parent, Action<GameObject, object, object> loadAsync,
+            Action loading, object param1, object param2);
 
-    void Release(GameObject obj, bool destroyCache = false); 
+        UniTask<T> LoadResourceAsync<T>(string path) where T : UnityEngine.Object;
+        UniTask<T> LoadResourceAsync<T>(string path,bool isEncrypt) where T : UnityEngine.Object;
+        //Task<T> LoadResourceAsyncAas<T>(string path, BundleModuleName moduleName ) where T : UnityEngine.Object;
+        void RemoveObjectLoadCallBack(long loadid);
 
-    void Release(Texture texture);
+        void Release(GameObject obj, bool destroyCache = false);
 
-    void Release(AssetsRequest request);
+        void Release(Texture texture);
 
-    Sprite LoadSprite(string path);
+        void Release(AssetsRequest request);
 
-    Texture LoadTexture(string path);
+        Sprite LoadSprite(string path);
 
-    AudioClip LoadAudio(string path);
+        Texture LoadTexture(string path);
 
-    TextAsset LoadTextAsset(string path);
-    AsyncOperation  LoadSceceAsync(string path, LoadSceneMode loadSceneMode = LoadSceneMode.Additive);
-    T LoadScriptableObject<T>(string path) where T : UnityEngine.Object;
- 
-    UnityEngine.Sprite LoadAtlasSprite(string atlasPath, string spriteName);
+        AudioClip LoadAudio(string path);
 
-    UnityEngine.Sprite LoadPNGAtlasSprite(string atlasPath, string spriteName);
+        TextAsset LoadTextAsset(string path);
+        AsyncOperation LoadSceceAsync(string path, LoadSceneMode loadSceneMode = LoadSceneMode.Additive);
+        T LoadScriptableObject<T>(string path) where T : UnityEngine.Object;
 
-    long LoadTextureAsync(string path, Action<Texture, object> loadAsync, object param1 = null);
+        void LoadResourceAsync<T>(string path, Action<UnityEngine.Object, object> loadAsync, object param1 = null) where T : UnityEngine.Object;
+        UnityEngine.Sprite LoadAtlasSprite(string atlasPath, string spriteName);
 
-    long LoadSpriteAsync(string path, Image image, bool setNativeSize = false, Action<Sprite> loadAsync = null);
+        UnityEngine.Sprite LoadPNGAtlasSprite(string atlasPath, string spriteName);
 
-    void ClearAllAsyncLoadTask();
+        long LoadTextureAsync(string path, Action<Texture, object> loadAsync, object param1 = null);
 
-    void ClearResourcesAssets(bool absoluteCleaning);//是否深度清理
+        long LoadSpriteAsync(string path, Image image, bool setNativeSize = false, Action<Sprite> loadAsync = null);
 
+        void ClearAllAsyncLoadTask();
 
+        void ClearResourcesAssets(bool absoluteCleaning); //是否深度清理
+    }
 }

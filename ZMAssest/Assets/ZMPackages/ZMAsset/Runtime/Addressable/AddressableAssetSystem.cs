@@ -22,7 +22,7 @@ namespace ZM.ZMAsset
         /// <summary>
         /// 所有热更资源模块
         /// </summary>
-        private Dictionary<BundleModuleEnum, AddressableModule> mAllAssetsModuleDic = new Dictionary<BundleModuleEnum, AddressableModule>();
+        private Dictionary<string, AddressableModule> mAllAssetsModuleDic = new Dictionary<string, AddressableModule>();
  
         /// <summary>
         /// 初始化寻址资源模块
@@ -30,7 +30,7 @@ namespace ZM.ZMAsset
         /// <param name="module"></param>
         /// <param name="assetModule"></param>
         /// <returns></returns>
-        public async UniTask<bool> InitAddressableModule(BundleModuleEnum module, AddressableModule assetModule)
+        public async UniTask<bool> InitAddressableModule(string module, AddressableModule assetModule)
         {
             if (assetModule.IsHotAsset)
             {
@@ -51,7 +51,7 @@ namespace ZM.ZMAsset
             return await AssetBundleManager.Instance.InitAssetModule(module);
         }
        
-        public async Task<bool> LoadAddressableAsset(BundleModuleEnum module,uint crc, string bundleName)
+        public async Task<bool> LoadAddressableAsset(string module,uint crc, string bundleName)
         {
             //下载流程：资源清单文件 - 资源配置文件 - 对应资源 + 资源依赖包，全部下载完成后进行加载。
             AddressableModule assetModule= GetAddressableModule(module);
@@ -100,12 +100,23 @@ namespace ZM.ZMAsset
         /// <param name="module">资源模块类型</param>
         /// <param name="hotFileInfo">热更文件信息</param>
         /// <returns></returns>
-        private async UniTask<bool> HotAssetBundleFile(AddressableModule asset,BundleModuleEnum module,HotFileInfo hotFileInfo)
+        private async UniTask<bool> HotAssetBundleFile(AddressableModule asset,string module,HotFileInfo hotFileInfo)
         {
             //不等于Null说明许需要热更
             if (hotFileInfo != null)
             {
-                DownLoadThread downLoadItem = new DownLoadThread(module, hotFileInfo, asset.HotAssetDownLoadUrl, asset.HotAssetsSavePath);
+                string downLoadURl = string.Empty;
+                //同步最新下载域名
+                if (asset.HotAssetDownLoadUrl.Contains("fat"))
+                {
+                    downLoadURl = asset.HotAssetDownLoadUrl.Replace("https://fat-files.yallajalsat.com/unity/assetbundle",BundleSettings.Instance.AssetBundleDownLoadUrl);
+                }
+                else
+                {
+                    downLoadURl = asset.HotAssetDownLoadUrl.Replace("https://files.yallajalsat.com/unity/assetbundle",BundleSettings.Instance.AssetBundleDownLoadUrl);
+                }
+
+                DownLoadThread downLoadItem = new DownLoadThread(module, hotFileInfo, downLoadURl, asset.HotAssetsSavePath);
                 bool downLoadSuccess = await downLoadItem.StartDownLoadAsync();
                 if (downLoadSuccess)
                     asset.RemoveNeedHotAsset(hotFileInfo);
@@ -120,7 +131,7 @@ namespace ZM.ZMAsset
         /// </summary>
         /// <param name="module"></param>
         /// <returns></returns>
-        public AddressableModule GetAddressableModule(BundleModuleEnum module)
+        public AddressableModule GetAddressableModule(string module)
         {
             mAllAssetsModuleDic.TryGetValue(module, out var asset);
             if (asset == null)

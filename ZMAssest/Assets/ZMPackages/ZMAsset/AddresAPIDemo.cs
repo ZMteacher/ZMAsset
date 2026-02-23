@@ -10,12 +10,12 @@ public class AddresAPIDemo : MonoBehaviour
     private async void Awake()
     {
         ZMAsset.InitFrameWork();
-        AssetsRequest asset = await ZMAddressableAsset.InstantiateAsyncFormPool(AssetsPathConfig.GAME_ITEM_PATH + "6013/6013",null,BundleModuleEnum.AdressAsset);
+        AssetsRequest asset = await ZMAddressableAsset.InstantiateAsyncFormPool(AssetsPathConfig.GAME_ITEM_PATH + "6013/6013",null,BundleModuleName.AdressAsset);
  
         asset.obj.transform.SetParent(transform.GetChild(0).GetChild(0));
 
         await UniTask.Delay(1000);
-        rawImageAsync.texture=await ZMAddressableAsset.LoadResourceAsync<Texture>(AssetsPathConfig.GAME_ITEM_PATH + "6001/huafei.png", BundleModuleEnum.AdressAsset);
+        rawImageAsync.texture=await ZMAddressableAsset.LoadResourceAsync<Texture>(AssetsPathConfig.GAME_ITEM_PATH + "6001/huafei.png", BundleModuleName.AdressAsset);
     }
 
     public async void Update()
@@ -23,7 +23,7 @@ public class AddresAPIDemo : MonoBehaviour
 
         if (Input.GetKeyDown(KeyCode.Q))
         {
-            rawImageAsync.texture = await ZMAddressableAsset.LoadResourceAsync<Texture>(AssetsPathConfig.GAME_ITEM_PATH + "6001/huafei.png", BundleModuleEnum.AdressAsset);
+            rawImageAsync.texture = await ZMAddressableAsset.LoadResourceAsync<Texture>(AssetsPathConfig.GAME_ITEM_PATH + "6001/huafei.png", BundleModuleName.AdressAsset);
 
         }
     }

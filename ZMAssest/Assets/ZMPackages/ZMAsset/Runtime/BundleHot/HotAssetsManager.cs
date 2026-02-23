@@ -4,7 +4,7 @@
 *
 * Description: 可视化多模块打包器、多模块热更、多线程下载、多版本热更、多版本回退、加密、解密、内嵌、解压、内存引用计数、大型对象池、AssetBundle加载、Editor加载
 *
-* Author: 铸梦xy
+* Author: ZM
 *
 * Date: 2023.4.13
 *
@@ -21,11 +21,11 @@ namespace ZM.ZMAsset
     /// </summary>
     public class WaitDownLoadModule
     {
-        public BundleModuleEnum bundleModule;
+        public string bundleModule;
         public bool checkAssetsVersion;
-        public Action<BundleModuleEnum> startHot;
-        public Action<BundleModuleEnum> hotFinish;
-        public Action<BundleModuleEnum, float> hotAssetsProgressCallBack;
+        public Action<string> startHot;
+        public Action<string> hotFinish;
+        public Action<string, float> hotAssetsProgressCallBack;
     }
 
     public class HotAssetsManager : IHotAssets
@@ -37,12 +37,12 @@ namespace ZM.ZMAsset
         /// <summary>
         /// 所有热更资源模块
         /// </summary>
-        private Dictionary<BundleModuleEnum, HotAssetsModule> mAllAssetsModuleDic = new Dictionary<BundleModuleEnum, HotAssetsModule>();
+        private Dictionary<string, HotAssetsModule> mAllAssetsModuleDic = new Dictionary<string, HotAssetsModule>();
 
         /// <summary>
         /// 正在下载热更资源模块的字典
         /// </summary>
-        private Dictionary<BundleModuleEnum, HotAssetsModule> mDownLoadingAssetsModuleDic = new Dictionary<BundleModuleEnum, HotAssetsModule>();
+        private Dictionary<string, HotAssetsModule> mDownLoadingAssetsModuleDic = new Dictionary<string, HotAssetsModule>();
         /// <summary>
         /// 正在下载热更资源的列表
         /// </summary>
@@ -56,7 +56,7 @@ namespace ZM.ZMAsset
         /// </summary>
         public static Action<HotFileInfo> DownLoadBundleFinish;
 
-        public void HotAssets(BundleModuleEnum bundleModule, Action<BundleModuleEnum> startHotCallBack, Action<BundleModuleEnum> hotFinish, Action<BundleModuleEnum> waiteDownLoad, bool isCheckAssetsVersion = true)
+        public void HotAssets(string bundleModule, Action<string> startHotCallBack, Action<string> hotFinish, Action<string> waiteDownLoad, bool isCheckAssetsVersion = true)
         {
             if (BundleSettings.Instance.bundleHotType==  BundleHotEnum.NoHot)
             {
@@ -90,7 +90,7 @@ namespace ZM.ZMAsset
                 mWaitDownLoadQueue.Enqueue(new WaitDownLoadModule { bundleModule=bundleModule,startHot=startHotCallBack,hotFinish=hotFinish, checkAssetsVersion = isCheckAssetsVersion });
             }
         }
-        public HotAssetsModule GetOrNewAssetModule(BundleModuleEnum bundleModule)
+        public HotAssetsModule GetOrNewAssetModule(string bundleModule)
         {
             HotAssetsModule assetsModule = null;
             if (mAllAssetsModuleDic.ContainsKey(bundleModule))
@@ -110,7 +110,7 @@ namespace ZM.ZMAsset
         /// </summary>
         /// <param name="bundleModule">热更模块</param>
         /// <param name="callBack">热更回调</param>
-        public void  CheckAssetsVersion(BundleModuleEnum bundleModule, Action<bool, float> callBack)
+        public void  CheckAssetsVersion(string bundleModule, Action<bool, float> callBack)
         {
             if (BundleSettings.Instance.bundleHotType == BundleHotEnum.NoHot)
             {
@@ -133,7 +133,7 @@ namespace ZM.ZMAsset
         /// </summary>
         /// <param name="bundleModule"></param>
         /// <returns></returns>
-        public HotAssetsModule GetHotAssetsModule(BundleModuleEnum bundleModule)
+        public HotAssetsModule GetHotAssetsModule(string bundleModule)
         {
             if (mAllAssetsModuleDic.ContainsKey(bundleModule))
             {
@@ -145,7 +145,7 @@ namespace ZM.ZMAsset
         /// 热更模块资源完成
         /// </summary>
         /// <param name="bundleModule"></param>
-        private async void HotModuleAssetsFinish(BundleModuleEnum bundleModule)
+        private async void HotModuleAssetsFinish(string bundleModule)
         {
             //把下载完成的模块从下载中的字典中移除掉
             if (mDownLoadingAssetsModuleDic.ContainsKey(bundleModule))

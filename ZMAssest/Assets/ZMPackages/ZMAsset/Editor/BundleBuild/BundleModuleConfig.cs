@@ -4,7 +4,7 @@
 *
 * Description: 可视化多模块打包器、多模块热更、多线程下载、多版本热更、多版本回退、加密、解密、内嵌、解压、内存引用计数、大型对象池、AssetBundle加载、Editor加载
 *
-* Author: 铸梦xy
+* Author: ZM
 *
 * Date: 2023.4.13
 *
@@ -46,7 +46,12 @@ public class BundleModuleConfig : OdinEditorWindow
     [DisplayAsString]
     public string signBundle = "指定的文件夹会单独打成一个AssetBundle";
 
-
+    [ReadOnly]
+    [HideLabel]
+    [TabGroup("源文件配置")]
+    [DisplayAsString]
+    public string sourceBundle = "指定的文件夹下的所有源文件会拷贝到AssetBundle文件夹";
+    
     [FolderPath]
     [TabGroup("预制体包")]
     [LabelText("预制体资源路径配置")]
@@ -62,6 +67,12 @@ public class BundleModuleConfig : OdinEditorWindow
     [LabelText("单个补丁包路径配置")]
     public BundleFileInfo[] signFolderPathArr = new BundleFileInfo[] {};
 
+    [FolderPath]
+    [TabGroup("源文件配置")]
+    [LabelText("源文件路径配置")]
+    public string[] sourceFolderPathArr = new string[] {};
+    
+    
     public static void ShowWindow(string moduleName)
     {
         BundleModuleConfig window = GetWindowWithRect<BundleModuleConfig>(new Rect(0,0,600,600));
@@ -75,6 +86,7 @@ public class BundleModuleConfig : OdinEditorWindow
             window.prefabPathArr = moduleData.prefabPathArr;
             window.rootFolderPathArr = moduleData.rootFolderPathArr;
             window.signFolderPathArr = moduleData.signFolderPathArr;
+            window.sourceFolderPathArr = moduleData.sourceFolderPathArr;
         }
     }
 
@@ -133,6 +145,7 @@ public class BundleModuleConfig : OdinEditorWindow
             moduleData.prefabPathArr = this.prefabPathArr;
             moduleData.rootFolderPathArr = this.rootFolderPathArr;
             moduleData.signFolderPathArr = this.signFolderPathArr;
+            moduleData.sourceFolderPathArr = this.sourceFolderPathArr;
             BuildBundleConfigura.Instance.SaveModuleData(moduleData);
         }
         else
@@ -140,6 +153,7 @@ public class BundleModuleConfig : OdinEditorWindow
             moduleData.prefabPathArr = this.prefabPathArr;
             moduleData.rootFolderPathArr = this.rootFolderPathArr;
             moduleData.signFolderPathArr = this.signFolderPathArr;
+            moduleData.sourceFolderPathArr = this.sourceFolderPathArr;
             BuildBundleConfigura.Instance.SaveModuleData(moduleData);
         }
       

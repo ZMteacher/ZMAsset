@@ -4,7 +4,7 @@
 *
 * Description: 可视化多模块打包器、多模块热更、多线程下载、多版本热更、多版本回退、加密、解密、内嵌、解压、内存引用计数、大型对象池、AssetBundle加载、Editor加载
 *
-* Author: 铸梦xy
+* Author: ZM
 *
 * Date: 2023.4.13
 *
@@ -12,11 +12,14 @@
 ------------------------------------------------------------------------------------------------------------------------------------------------*/
 
 using System;
+using System.Collections.Concurrent;
 using System.IO;
 using System.Net;
+using System.Threading;
 using System.Threading.Tasks;
 using Cysharp.Threading.Tasks;
 using UnityEngine;
+using UnityEngine.Networking;
 
 namespace ZM.ZMAsset
 {
@@ -25,6 +28,8 @@ namespace ZM.ZMAsset
     /// </summary>
     public class DownLoadThread
     {
+        private static readonly SemaphoreSlim _fileSemaphore = new SemaphoreSlim(1, 1);
+
         /// <summary>
         /// 下载完成回调
         /// </summary>
@@ -37,7 +42,7 @@ namespace ZM.ZMAsset
         /// <summary>
         /// 当前热更的资源模块
         /// </summary>
-        private BundleModuleEnum mCurBundleModuleEnum;
+        private string _mCurBundleModuleName;
 
         /// <summary>
         /// 当前热更的资源模块
@@ -85,17 +90,17 @@ namespace ZM.ZMAsset
             string fileSavePath)
         {
             this.mCurHotAssetsModule = assetsModule;
-            this.mCurBundleModuleEnum = assetsModule.CurBundleModuleEnum;
+            this._mCurBundleModuleName = assetsModule.CurBundleModuleName;
             this.mHotFileInfo = hotFileInfo;
             this.mFileSavePath = fileSavePath + "/" + hotFileInfo.abName;
             this.mDownLoadUrl = downLoadUrl + "/" + hotFileInfo.abName;
         }
 
-        public DownLoadThread(BundleModuleEnum bundleModule, HotFileInfo hotFileInfo, string downLoadUrl,
+        public DownLoadThread(string bundleModule, HotFileInfo hotFileInfo, string downLoadUrl,
             string fileSavePath)
         {
             this.mHotFileInfo = hotFileInfo;
-            this.mCurBundleModuleEnum = bundleModule;
+            this._mCurBundleModuleName = bundleModule;
             this.mFileSavePath = fileSavePath + "/" + hotFileInfo.abName;
             this.mDownLoadUrl = downLoadUrl + "/" + hotFileInfo.abName;
         }
@@ -111,7 +116,7 @@ namespace ZM.ZMAsset
             curDownLoadCount++;
             OnDownLoadSuccess = downLoadSuccess;
             OnDownLoadFailed = downLoadFailed;
-            Debug.Log("StartDownLoad ModuelEnum:" + mCurHotAssetsModule.CurBundleModuleEnum + " AssetBundle URL:" + mDownLoadUrl);
+            Debug.Log("StartDownLoad ModuelEnum:" + mCurHotAssetsModule.CurBundleModuleName + " AssetBundle URL:" + mDownLoadUrl);
             Task.Run(() =>
             {
                 //这里的代码在子线程中执行
@@ -158,7 +163,7 @@ namespace ZM.ZMAsset
                         }
                         else
                         {
-                            Debug.Log("OnDownLoadSuccess ModuleEnum:" + mCurHotAssetsModule.CurBundleModuleEnum + " AssetBundleUrl:" + mDownLoadUrl + " FileSavePath:" + mFileSavePath);
+                            Debug.Log("OnDownLoadSuccess ModuleEnum:" + mCurHotAssetsModule.CurBundleModuleName + " AssetBundleUrl:" + mDownLoadUrl + " FileSavePath:" + mFileSavePath);
                             OnDownLoadSuccess?.Invoke(this, mHotFileInfo);
                         }
                     }
@@ -180,74 +185,131 @@ namespace ZM.ZMAsset
             });
         }
 
-        public async UniTask<bool> StartDownLoadAsync()
+         
+        private static readonly ConcurrentDictionary<string, Task<bool>> _downloadTasks = new();
+        
+        public async Task<bool> StartDownLoadAsync()
         {
+            return await GetOrCreateDownloadTask(mDownLoadUrl);
+        }
+
+        private async Task<bool> GetOrCreateDownloadTask(string url)
+        {
+            // 尝试获取已存在的下载任务
+            if (_downloadTasks.TryGetValue(url, out var existingTask))
+            {
+                return await existingTask;
+            }
+
+            // 创建新的下载任务
+            var downloadTask = InternalStartDownLoadAsync();
+
+            // 尝试添加到字典，如果已被其他线程添加则用已有的
+            if (!_downloadTasks.TryAdd(url, downloadTask))
+            {
+                return await _downloadTasks[url];
+            }
+
             try
+            {
+                return await downloadTask;
+            }
+            finally
+            {
+                _downloadTasks.TryRemove(url, out _);
+            }
+        }
+
+        // 原有的下载实现逻辑，重命名为 InternalStartDownLoadAsync
+        private async Task<bool> InternalStartDownLoadAsync()
+        {
+ 
+
+             try
             {
                 curDownLoadCount++;
                 //文件是否完整
                 bool fileIsComplete = false;
-                await Task.Run(async () =>
-                {
-                    Debug.Log("StartDownLoad ModuelEnum:" + mCurBundleModuleEnum + " AssetBundle URL:" + mDownLoadUrl);
-                    
-                    HttpWebRequest request = WebRequest.Create(mDownLoadUrl) as HttpWebRequest;
-                    request.Method = "GET";
-                    //发起请求
-                    HttpWebResponse response = request.GetResponse() as HttpWebResponse;
 
-                    //创建本地文件流
-                    using (FileStream fileStream = File.Create(mFileSavePath))
+                UnityWebRequest webrequest = UnityWebRequest.Get(mDownLoadUrl);
+                webrequest.timeout = 60;
+                await webrequest.SendWebRequest();
+               
+                if (webrequest.result == UnityWebRequest.Result.Success)
+                {
+                    byte[] buffer = webrequest.downloadHandler.data;
+                    if (buffer != null && buffer.Length > 0)
                     {
-                        using (var stream = response.GetResponseStream())
+                        await _fileSemaphore.WaitAsync();
+                        try
                         {
-                            byte[] buffer = new byte[512]; //512 
-                            //从字节流中读取字节，读取到buff数组中
-                            int size = stream.Read(buffer, 0, buffer.Length); //700
-                            while (size > 0)
-                            {
-                                fileStream.Write(buffer, 0, size);
-                                size = stream.Read(buffer, 0, buffer.Length);
-                                //1mb=1024kb 1kb=1024字节
-                                mDownLoadSizeKB += size;
-                            }
+                            //异步写入本地文件
+                            await System.IO.File.WriteAllBytesAsync(mFileSavePath, buffer);
                         }
-                        fileStream.Dispose();
-                        fileStream.Close();
+                        catch (Exception e)
+                        {
+                            Debug.Log("FixDownLoad File Write Local Exception Url:" + mDownLoadUrl + " Exception:" + e);
+                        }
+                        finally
+                        {
+                            _fileSemaphore.Release();
+                        }
+                       
+                        //验证下载下来的文件是否完整，可能会被运营商或第三方拦截篡改
+                        fileIsComplete = MD5.GetMd5FromFile(mFileSavePath) == mHotFileInfo.md5;
+                        mDownLoadSizeKB = buffer.Length;
+                        if (!fileIsComplete)
+                        {
+                            Debug.LogError("FixDownLoad 文件下载完成，但文件已损坏");
+                        }
+
                     }
-                   
-                    //验证下载下来的文件是否完整，可能会被运营商或第三方拦截篡改
-                    fileIsComplete = MD5.GetMd5FromFile(mFileSavePath) == mHotFileInfo.md5;
-                });
+                    else
+                    {
+                        Debug.LogError("FixDownLoad File DownLoad exception mDownLoadSizeKB ==0");
+                        mDownLoadSizeKB = 0;
+                    }
+                }
+                else
+                {
+                    Debug.LogError("FixDownLoad File DownLoad exception webrequest.result:" + webrequest.result);
+                    mDownLoadSizeKB = 0;
+                }
+
+                webrequest.Dispose();
                 //文件下载异常 或 下载完成的文件因网络问题或其他问题发生损坏
                 if (mDownLoadSizeKB == 0 || !fileIsComplete)
                 {
-                    Debug.LogError("File DownLoad exception plase check file fileName:" + mHotFileInfo.abName + " fileUrl:" + mDownLoadUrl);
+                    Debug.LogError("FixDownLoad File DownLoad exception plase check file fileName:" +
+                                   mHotFileInfo.abName + " fileUrl:" + mDownLoadUrl);
                     if (curDownLoadCount >= MAX_TRY_DOWNLOAD_COUNT)
                     {
-                        Debug.LogError("文件下载失败，正在进行重新下载，下载次数" + curDownLoadCount);
+                        Debug.LogError("FixDownLoad 文件下载失败，正在进行重新下载，下载次数" + curDownLoadCount);
                         return await StartDownLoadAsync();
-                                 
+
                     }
+
                     return false;
                 }
-                 
-                Debug.Log("OnDownLoadSuccess ModuleEnum:" + mCurBundleModuleEnum + " AssetBundleUrl:" + mDownLoadUrl + " FileSavePath:" + mFileSavePath);
+
+                Debug.Log("FixDownLoad OnDownLoadSuccess ModuleEnum:" + _mCurBundleModuleName + " AssetBundleUrl:" +
+                          mDownLoadUrl + " FileSavePath:" + mFileSavePath);
                 return true;
             }
             catch (Exception e)
             {
-                Debug.LogError("DownLoad AssetBundle Error Url:" + mDownLoadUrl + " Exception:" + e);
+                Debug.LogError("FixDownLoad DownLoad AssetBundle Error Url:" + mDownLoadUrl + " Exception:" + e);
                 if (curDownLoadCount > MAX_TRY_DOWNLOAD_COUNT)
                 {
                     return false;
                 }
                 else
                 {
-                    Debug.LogError("文件下载失败，正在进行重新下载，下载次数" + curDownLoadCount);
+                    Debug.LogError("FixDownLoad 文件下载失败，正在进行重新下载，下载次数" + curDownLoadCount);
                     return await StartDownLoadAsync();
                 }
             }
+             
         }
     }
 }
