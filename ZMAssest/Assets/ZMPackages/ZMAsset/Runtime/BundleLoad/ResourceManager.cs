@@ -181,7 +181,7 @@ namespace ZM.ZMAsset
                     {
                         Debug.Log("ResourceManager AssetsDownLoadFinish Load Obj path:" + item.Value.path);
                         item.Value.loadResult?.Invoke(Instantiate(item.Value.path, null, Vector3.zero, Vector3.one, Quaternion.identity),
-                            item.Value.param1, item.Value.param1);
+                            item.Value.param1, item.Value.param2);
                         removeList.Add(item.Key);
                     }
                 }
@@ -989,7 +989,7 @@ namespace ZM.ZMAsset
                     item.crc = crc;
                     item.refCount++;
                     mAlreayLoadAssetsDic.TryAdd(crc, item);
-                    return obj;
+                    return item.obj as T;
                 }
                 //通过异步方式加载AssetBudnle
                 T loadObj = await item.assetBundle.LoadAssetAsync<T>(item.assetName) as T;

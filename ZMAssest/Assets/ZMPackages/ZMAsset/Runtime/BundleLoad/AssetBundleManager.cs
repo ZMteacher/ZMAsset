@@ -328,7 +328,7 @@ namespace ZM.ZMAsset
                 {
                     await taskCompletionSource.Task;
                     mAllAlreadyLoadBundleDic.TryGetValue(bundleName,out var bundleCache);
-                    return bundleCache.assetBundle;
+                    return bundleCache?.assetBundle;
                 }
                 //从类对象池中取出一个AssetBundleCache
                 bundle= mBundleCachePool.Spawn();
@@ -380,6 +380,14 @@ namespace ZM.ZMAsset
                 if (bundle.assetBundle==null)
                 {
                     Debug.LogError("AssetBundle load failed bundlePath:"+ bundlePath);
+                    // 归还 pool 对象，避免内存泄漏
+                    mBundleCachePool.Recycl(bundle);
+                    // 通知所有等待方加载失败
+                    if (mAsyncLoadBundleActionDic.TryGetValue(bundleName, out var failedSource))
+                    {
+                        failedSource.TrySetCanceled();
+                        mAsyncLoadBundleActionDic.Remove(bundleName);
+                    }
                     return null;
                 }
                 //AssetBundle引用计数增加
@@ -479,6 +487,8 @@ namespace ZM.ZMAsset
                 if (bundle.assetBundle==null)
                 {
                     Debug.LogError("AssetBundle load failed bundlePath:"+ bundlePath);
+                    // 归还 pool 对象，避免内存泄漏
+                    mBundleCachePool.Recycl(bundle);
                     return null;
                 }
                 //AssetBundle引用计数增加

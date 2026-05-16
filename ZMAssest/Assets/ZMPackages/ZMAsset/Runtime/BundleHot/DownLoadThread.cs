@@ -127,14 +127,12 @@ namespace ZM.ZMAsset
                     //发起请求
                     HttpWebResponse response = request.GetResponse() as HttpWebResponse;
             
-                    //创建本地文件流
-                    FileStream fileStream = File.Create(mFileSavePath);
-            
+                    //创建本地文件流，使用 using 确保异常时也能释放文件句柄
+                    using (FileStream fileStream = File.Create(mFileSavePath))
                     using (var stream = response.GetResponseStream())
                     {
-                        byte[] buffer = new byte[512]; //512 
-                        //从字节流中读取字节，读取到buff数组中
-                        int size = stream.Read(buffer, 0, buffer.Length); //700
+                        byte[] buffer = new byte[512];
+                        int size = stream.Read(buffer, 0, buffer.Length);
                         
                         while (size > 0)
                         {
@@ -145,8 +143,6 @@ namespace ZM.ZMAsset
                             //计算以m为单位的大小
                             mCurHotAssetsModule.AssetsDownLoadSizeM += ((size / 1024.0f) / 1024.0f);
                         }
-                        fileStream.Dispose();
-                        fileStream.Close();
                         //文件下载异常 或 下载完成的文件因网络问题或其他问题发生损坏 || MD5.GetMd5FromFile(mFileSavePath) != mHotFileInfo.md5
                         if (mDownLoadSizeKB == 0 || MD5.GetMd5FromFile(mFileSavePath) != mHotFileInfo.md5)
                         {
@@ -207,7 +203,11 @@ namespace ZM.ZMAsset
             // 尝试添加到字典，如果已被其他线程添加则用已有的
             if (!_downloadTasks.TryAdd(url, downloadTask))
             {
-                return await _downloadTasks[url];
+                // TryAdd失败说明另一个线程已添加，重新TryGetValue防止KeyNotFoundException
+                if (_downloadTasks.TryGetValue(url, out var concurrentTask))
+                    return await concurrentTask;
+                // 极端情况：该任务已完成并被移除，直接执行本次任务
+                return await downloadTask;
             }
 
             try
@@ -284,12 +284,11 @@ namespace ZM.ZMAsset
                                    mHotFileInfo.abName + " fileUrl:" + mDownLoadUrl);
                     if (curDownLoadCount >= MAX_TRY_DOWNLOAD_COUNT)
                     {
-                        Debug.LogError("FixDownLoad 文件下载失败，正在进行重新下载，下载次数" + curDownLoadCount);
-                        return await StartDownLoadAsync();
-
+                        Debug.LogError("FixDownLoad 文件已达最大重试次数，下载失败，下载次数：" + curDownLoadCount);
+                        return false;
                     }
-
-                    return false;
+					return await StartDownLoadAsync();
+     
                 }
 
                 Debug.Log("FixDownLoad OnDownLoadSuccess ModuleEnum:" + _mCurBundleModuleName + " AssetBundleUrl:" +
@@ -299,7 +298,7 @@ namespace ZM.ZMAsset
             catch (Exception e)
             {
                 Debug.LogError("FixDownLoad DownLoad AssetBundle Error Url:" + mDownLoadUrl + " Exception:" + e);
-                if (curDownLoadCount > MAX_TRY_DOWNLOAD_COUNT)
+                if (curDownLoadCount >= MAX_TRY_DOWNLOAD_COUNT)
                 {
                     return false;
                 }

@@ -16,7 +16,7 @@ using Cysharp.Threading.Tasks;
 using UnityEngine;
 namespace ZM.ZMAsset
 {
-    public class HotUpdateManager : ZMAssetMonoSingleton<HotUpdateManager>
+    public class HotUpdateManager :  MonoSingleton<HotUpdateManager>
     {
         private System.Action OnHotFinishCallBackAction;
         /// <summary>

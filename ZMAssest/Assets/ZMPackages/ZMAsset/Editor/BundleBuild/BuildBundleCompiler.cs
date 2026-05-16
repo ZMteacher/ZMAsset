@@ -559,11 +559,7 @@ namespace ZM.ZMAsset
         /// </summary>
         public static void EncryptHotScriptBundle()
         {
-            if (_mBundleModuleName==BundleModuleName.CommonGame.ToString())
-            {
-                Debug.Log("CommonGame no encrypt...");
-                return;
-            }
+             
             DirectoryInfo directoryInfo = new DirectoryInfo(mBundleOutPutPath);
             FileInfo[] fileInfoArr = directoryInfo.GetFiles("*", SearchOption.AllDirectories);
             for (int i = 0; i < fileInfoArr.Length; i++)

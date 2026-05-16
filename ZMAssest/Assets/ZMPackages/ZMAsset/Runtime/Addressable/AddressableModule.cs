@@ -1,6 +1,5 @@
 ﻿using Newtonsoft.Json;
 using System;
-using System.Collections;
 using System.Collections.Generic;
 using System.Threading.Tasks;
 using UnityEngine.Networking;
@@ -139,14 +138,8 @@ namespace ZM.ZMAsset
                 }
             }
 
-            if (serverHotPatch != null)
-            {
-                return true;
-            }
-            else
-            {
-                return false;
-            }
+            // 本地与服务端补丁版本一致，不需要热更
+            return false;
         }
         /// <summary>
         /// 计算需要热更的文件列表
@@ -185,7 +178,7 @@ namespace ZM.ZMAsset
         /// 下载资源热更清单
         /// </summary>
         /// <returns></returns>
-        private IEnumerator DownLoadHotAssetsManifest()
+        private async UniTask DownLoadHotAssetsManifest()
         {
             string url = $"{BundleSettings.Instance.AssetBundleDownLoadUrl}/HotAssets/{CurBundleModuleName}/{BundleSettings.Instance.HotManifestName(CurBundleModuleName)}";
             UnityWebRequest webRequest = UnityWebRequest.Get(url);
@@ -193,28 +186,35 @@ namespace ZM.ZMAsset
 
             Debug.Log("*** Requset HotAssetsMainfest Url:" + url);
 
-            yield return webRequest.SendWebRequest();
-
-            if (webRequest.result== UnityWebRequest.Result.ConnectionError)
-            {
-                Debug.LogError("DownLoad Error:" + webRequest.error);
-                yield break;
-            }
-            string donwloadContent = webRequest.downloadHandler.text;
             try
             {
-                Debug.Log($"*** Request AssetBundle HotAssetsMainfest Url Finish Module:{CurBundleModuleName} txt:{donwloadContent}");
-                //写入服务端资源热更清单到本地
-                FileHelper.WriteFileAsync(mServerHotAssetsManifestPath, donwloadContent);
-                if (!string.IsNullOrEmpty(donwloadContent) && donwloadContent.Contains("md5"))
-                    mServerHotAssetsManifest = JsonConvert.DeserializeObject<HotAssetsManifest>(donwloadContent);
+                await webRequest.SendWebRequest();
+
+                if (webRequest.result == UnityWebRequest.Result.ConnectionError)
+                {
+                    Debug.LogError("DownLoad Error:" + webRequest.error);
+                    return;
+                }
+                string donwloadContent = webRequest.downloadHandler.text;
+                try
+                {
+                    Debug.Log($"*** Request AssetBundle HotAssetsMainfest Url Finish Module:{CurBundleModuleName} txt:{donwloadContent}");
+                    //写入服务端资源热更清单到本地
+                    FileHelper.WriteFileAsync(mServerHotAssetsManifestPath, donwloadContent);
+                    if (!string.IsNullOrEmpty(donwloadContent) && donwloadContent.Contains("md5"))
+                        mServerHotAssetsManifest = JsonConvert.DeserializeObject<HotAssetsManifest>(donwloadContent);
+                }
+                catch (Exception e)
+                {
+                    Debug.LogError("服务端资源清单配置下载异常，文件不存在或者配置有问题，更新出错，请检查：" + e.ToString());
+                }
             }
-            catch (Exception e)
+            finally
             {
-                Debug.LogError("服务端资源清单配置下载异常，文件不存在或者配置有问题，更新出错，请检查：" + e.ToString());
+                // 确保无论是否发生异常都释放 WebRequest
+                webRequest.Dispose();
             }
-            webRequest.Dispose();
-         }
+        }
         public void GeneratorHotAssetsManifest()
         {
             mServerHotAssetsManifestPath = Application.persistentDataPath + "/Server" + CurBundleModuleName + "AssetsHotManifest.json";

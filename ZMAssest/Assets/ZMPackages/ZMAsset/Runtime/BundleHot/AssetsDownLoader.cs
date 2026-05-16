@@ -194,11 +194,13 @@ namespace ZM.ZMAsset
         /// </summary>
         public void OnMainThreadUpdate()
         {
-            if (mDownLoadEventQueue.Count>0)
+            DownLoadEventHandler downLoadEventHandler = null;
+            lock (mDownLoadEventQueue)
             {
-                DownLoadEventHandler downLoadEventHandler= mDownLoadEventQueue.Dequeue();
-                downLoadEventHandler.downLoadEvent?.Invoke(downLoadEventHandler.hotfileInfo);
+                if (mDownLoadEventQueue.Count > 0)
+                    downLoadEventHandler = mDownLoadEventQueue.Dequeue();
             }
+            downLoadEventHandler?.downLoadEvent?.Invoke(downLoadEventHandler.hotfileInfo);
         }
         public void RemoveDownLoadThread(DownLoadThread downLoadThread)
         {

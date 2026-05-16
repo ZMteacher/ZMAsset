@@ -105,18 +105,8 @@ namespace ZM.ZMAsset
             //不等于Null说明许需要热更
             if (hotFileInfo != null)
             {
-                string downLoadURl = string.Empty;
-                //同步最新下载域名
-                if (asset.HotAssetDownLoadUrl.Contains("fat"))
-                {
-                    downLoadURl = asset.HotAssetDownLoadUrl.Replace("https://fat-files.yallajalsat.com/unity/assetbundle",BundleSettings.Instance.AssetBundleDownLoadUrl);
-                }
-                else
-                {
-                    downLoadURl = asset.HotAssetDownLoadUrl.Replace("https://files.yallajalsat.com/unity/assetbundle",BundleSettings.Instance.AssetBundleDownLoadUrl);
-                }
-
-                DownLoadThread downLoadItem = new DownLoadThread(module, hotFileInfo, downLoadURl, asset.HotAssetsSavePath);
+                
+                DownLoadThread downLoadItem = new DownLoadThread(module, hotFileInfo, asset.HotAssetDownLoadUrl, asset.HotAssetsSavePath);
                 bool downLoadSuccess = await downLoadItem.StartDownLoadAsync();
                 if (downLoadSuccess)
                     asset.RemoveNeedHotAsset(hotFileInfo);
