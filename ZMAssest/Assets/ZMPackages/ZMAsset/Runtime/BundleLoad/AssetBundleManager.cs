@@ -146,11 +146,12 @@ namespace ZM.ZMAsset
                 string assetBundleName = bundleModule.ToString().ToLower() + "assetbundleconfig";
                 string mBundleConfigName = bundleModule.ToString().ToLower() + "bundleconfig"+ BundleSettings.Instance.ABSUFFIX;
                 string mBundleConfigPath = BundleSettings.Instance.GetHotAssetsPath(bundleModule) + mBundleConfigName;
-                Debug.Log($"assetBundleName:{assetBundleName} mBundleConfigName:{mBundleConfigName} mBundleConfigPath:{mBundleConfigPath}");
+               
                 //获取当前模块配置文件所在的路径
                 if (GeneratorBundleConfigPath(bundleModule,mBundleConfigName,ref mBundleConfigPath))
                 {
                     AssetBundle bundleConfig = null;
+                    Debug.Log($"LoadBundleManifest :{mBundleConfigPath}");
                     //如果该AssetBundle已经加密，则需要解密
                     if (BundleSettings.Instance.bundleEncrypt.isEncrypt)
                     {
@@ -222,17 +223,13 @@ namespace ZM.ZMAsset
                 return true;
             }
             //如果配置文件 存在，return true，如果不存，我们就直接从内嵌的资源中去加载。
-            if (BundleSettings.Instance.bundleHotType == BundleHotEnum.NoHot || !File.Exists(mBundleConfigPath))
+            if (!File.Exists(mBundleConfigPath))
             {
                 mBundleConfigPath = BundleSettings.Instance.GetAssetsBuiltinBundlePath(bundleModule) + mBundleConfigName;
-#if  UNITY_EDITOR
-                return false;
-#endif
-                /*if (!File.Exists(mBundleConfigPath))
-                {
-                    return false;
-                }*/
+                //如果是Editor加载模式，不需要加载资源清单，直接跳过
+                return BundleSettings.Instance.loadAssetType == LoadAssetEnum.AssetBundle;
             }
+            
             return true;
         }
         #endregion

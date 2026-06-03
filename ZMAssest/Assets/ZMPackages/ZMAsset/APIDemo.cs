@@ -9,6 +9,7 @@ public class APIDemo : MonoBehaviour
     void Awake()
     {
         ZMAsset.InitFrameWork();
+        ZMAsset.InitAssetsModule(BundleModuleName.Hall);
     }
 
      

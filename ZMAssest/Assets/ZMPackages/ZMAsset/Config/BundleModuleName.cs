@@ -20,4 +20,6 @@ public class BundleModuleName
     
     public const string None = "None";
     public const string AdressAsset = "AdressAsset";
+    public const string GameItem = "AdressAsset";
+    public const string Hall = "Hall";
 }

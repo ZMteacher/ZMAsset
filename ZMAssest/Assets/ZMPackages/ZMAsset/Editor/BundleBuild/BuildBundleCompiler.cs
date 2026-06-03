@@ -104,8 +104,7 @@ namespace ZM.ZMAsset
             //初始化打包数据
             bool initStatus= Initlization(moduleData, buildType, hotPatchVersion,hotAppVersion, updateNotice,buildTarget);
             if (!initStatus) { return; }
-            //写入补丁版本
-            BuildPatchInfo();
+             
             //打包所有的文件夹
             BuildAllFolder();
             //打包父节点下的所有子文件夹

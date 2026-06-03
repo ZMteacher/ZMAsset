@@ -18,18 +18,10 @@ MonoBehaviour:
     isAddressableAsset: 0
     isBuild: 0
     isAddModule: 0
-    lastClickBtnTime: 1520.4562
-    prefabPathArr:
-    - Assets/GameData/Hall/Prefabs
-    rootFolderPathArr:
-    - Assets/GameData/Hall/Textures
-    signFolderPathArr:
-    - abName: hallData
-      bundlePath: Assets/GameData/Hall/CfgData
-    - abName: scene
-      bundlePath: Assets/Scenes
-    - abName: hotscript
-      bundlePath: Assets/GameData/Hall/HotFixDll
+    lastClickBtnTime: 23.457163
+    prefabPathArr: []
+    rootFolderPathArr: []
+    signFolderPathArr: []
     sourceFolderPathArr: []
   - bundleid: 0
     moduleName: GameItem

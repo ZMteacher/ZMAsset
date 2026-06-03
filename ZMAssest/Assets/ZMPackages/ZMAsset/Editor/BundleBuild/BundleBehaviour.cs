@@ -107,7 +107,7 @@ public class BundleBehaviour
                     //检测按钮是否是双击
                     if (Time.realtimeSinceStartup - moduleData.lastClickBtnTime<=0.18f)
                     {
-                        Debug.Log($"realtimeSinceStartup:{Time.realtimeSinceStartup} lastClickBtnTime:{moduleData.lastClickBtnTime}");
+                        // Debug.Log($"realtimeSinceStartup:{Time.realtimeSinceStartup} lastClickBtnTime:{moduleData.lastClickBtnTime}");
                         BundleModuleConfig.ShowWindow(moduleData.moduleName);
                     }
                     moduleData.lastClickBtnTime = Time.realtimeSinceStartup;
