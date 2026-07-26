@@ -1,0 +1,13 @@
+{
+  "bundleInfoList": [
+    {
+      "path": "Assets//ZMPackages/ZMAsset/Config/adressassetassetbundleconfig.json",
+      "crc": 3232842720,
+      "bundleName": "adressassetbundleconfig.uab",
+      "assetName": "adressassetassetbundleconfig.json",
+      "bundleModule": "AdressAsset",
+      "isAddressableAsset": true,
+      "bundleDependce": []
+    }
+  ]
+}

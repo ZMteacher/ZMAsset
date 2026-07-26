@@ -12,8 +12,10 @@
 ------------------------------------------------------------------------------------------------------------------------------------------------*/
 using Newtonsoft.Json;
 using System;
+using System.Collections;
 using System.Collections.Generic;
 using System.IO;
+using Cysharp.Threading.Tasks;
 using UnityEditor;
 using UnityEngine;
 
@@ -100,19 +102,35 @@ namespace ZM.ZMAsset
         /// <param name="updateNotice">更新公告</param>
         public static void BuildAssetBundle(BundleModuleData moduleData, BuildType buildType = BuildType.AssetBundle, int hotPatchVersion = 0,string hotAppVersion="0.0.0", string updateNotice = "",UnityEditor.BuildTarget buildTarget = UnityEditor.BuildTarget.NoTarget)
         {
+            IEnumerator routine = BuildAssetBundleStaged(moduleData, buildType, hotPatchVersion, hotAppVersion, updateNotice, buildTarget);
+            while (routine.MoveNext()) { }
+        }
 
+        public static IEnumerator BuildAssetBundleStaged(BundleModuleData moduleData, BuildType buildType = BuildType.AssetBundle, int hotPatchVersion = 0,string hotAppVersion="0.0.0", string updateNotice = "",UnityEditor.BuildTarget buildTarget = UnityEditor.BuildTarget.NoTarget)
+        {
+            ZMBuildProgress.Report("初始化模块", moduleData?.moduleName, .03f);
+            yield return null;
             //初始化打包数据
             bool initStatus= Initlization(moduleData, buildType, hotPatchVersion,hotAppVersion, updateNotice,buildTarget);
-            if (!initStatus) { return; }
+            if (!initStatus) { throw new InvalidOperationException("模块初始化失败"); }
              
             //打包所有的文件夹
+            ZMBuildProgress.Report("分析资源", "扫描单个 Bundle 配置", .10f);
+            yield return null;
             BuildAllFolder();
             //打包父节点下的所有子文件夹
+            ZMBuildProgress.Report("分析资源", "扫描文件夹子包", .20f);
+            yield return null;
             BuildRootSubFolder();
             //打包所有预制体
+            ZMBuildProgress.Report("分析资源", "扫描预制体与依赖", .32f);
+            yield return null;
             BuildAllPrefabs();
             //开始调用UnityAPI进行打包AssetBundle
+            ZMBuildProgress.Report("Unity 构建中", "即将调用 BuildPipeline.BuildAssetBundles，此阶段进度会暂时停留", .42f, false);
+            yield return null;
             BuildAllAssetBundle();
+            yield return null;
         }
         /// <summary>
         /// 初始化
@@ -166,7 +184,7 @@ namespace ZM.ZMAsset
             {
                 //获取文件夹路径
                 string path = mBuildModuleData.signFolderPathArr[i].bundlePath.Replace(@"\", "/");
-                EditorUtility.DisplayProgressBar("查找AB文件", "name:" + mBuildModuleData.signFolderPathArr[i].abName, i * 1.0f / mBuildModuleData.signFolderPathArr.Length);
+                ZMBuildProgress.Report("分析单个 Bundle", mBuildModuleData.signFolderPathArr[i].abName, .10f + .10f * i / mBuildModuleData.signFolderPathArr.Length);
  
                 DirectoryInfo info = new DirectoryInfo(path);
                 FileInfo[] pathArr = info.GetFiles("*", SearchOption.AllDirectories); ;
@@ -295,6 +313,7 @@ namespace ZM.ZMAsset
                 //生成所有要打包的Bundle
                 GenerateBundleBuilder();
                 //生成一份AssetBundle配置
+                ZMBuildProgress.Report("写入配置", "生成 AssetBundle 配置", .48f);
                 WriteAssetBundleConfig();
                 
                 AssetDatabase.Refresh();
@@ -303,32 +322,35 @@ namespace ZM.ZMAsset
                 Debug.Log("BuildPipeline.BuildAssetBundles target:"+target);
                 var buildAssetBundleOptions = UnityEditor.BuildAssetBundleOptions.ChunkBasedCompression;
                 //调用UnityAPI打包AssetBundle
+                ZMBuildProgress.Report("Unity 构建中", "BuildPipeline.BuildAssetBundles 正在执行，此阶段无法取消", .56f, false);
                 AssetBundleManifest manifest= BuildPipeline.BuildAssetBundles(mBundleOutPutPath,mBundleBuildList.ToArray(), buildAssetBundleOptions,mBuildTarget== UnityEditor.BuildTarget.NoTarget?EditorUserBuildSettings.activeBuildTarget:mBuildTarget);
                 if (manifest==null)
                 {
-                    EditorUtility.DisplayProgressBar("BuildAssetBundle!", "BuildAssetBundle failed!",1);
                     Debug.LogError("AssetBundle Build failed!");
+                    throw new InvalidOperationException("Unity BuildPipeline 构建 AssetBundle 失败");
                 }
                 else
                 {
+                    ZMBuildProgress.Report("构建后处理", "复制源文件并清理 Manifest", .80f);
                     Debug.Log("AssetBundle Build Successs!:"+ manifest);
                     BuildSourceAssetBundle();
                     DeleteAllBundleManifestFile();
                     EncryptHotScriptBundle();
                     if (mBuildType== BuildType.HotPatch)
                     {
+                        ZMBuildProgress.Report("生成热更输出", "复制补丁文件并生成清单", .90f);
                         GeneratorHotAssets();
-                        EditorUtility.RevealInFinder(mHotAssetsOutPutPath);
                     }
                     else
                     {
+                        ZMBuildProgress.Report("生成资源清单", "写入热更主清单", .92f);
                         GeneratorHotAssetsManifest(mBundleOutPutPath);
                     }
+                    ZMBuildProgress.Report("模块完成", _mBundleModuleName, 1f);
                 }
             }
             finally
             {
-                EditorUtility.ClearProgressBar();
             }
            
     
@@ -339,9 +361,12 @@ namespace ZM.ZMAsset
             {
                 foreach (var item in mBuildModuleData.sourceFolderPathArr)
                 {
+                    if (string.IsNullOrWhiteSpace(item)) continue;
                     //获取文件夹路径
                     string path = item.Replace(@"\", "/");
-  
+                    if (!Directory.Exists(path))
+                        throw new DirectoryNotFoundException($"模块 {_mBundleModuleName} 的源文件路径不存在：{path}");
+
                     DirectoryInfo info = new DirectoryInfo(path);
                     FileInfo[] pathArr = info.GetFiles("*", SearchOption.AllDirectories);
                     foreach (var fileInfo in pathArr)
@@ -396,9 +421,12 @@ namespace ZM.ZMAsset
             {
                 foreach (var item in mBuildModuleData.sourceFolderPathArr)
                 {
+                    if (string.IsNullOrWhiteSpace(item)) continue;
                     //获取文件夹路径
                     string path = item.Replace(@"\", "/");
-  
+                    if (!Directory.Exists(path))
+                        throw new DirectoryNotFoundException($"模块 {_mBundleModuleName} 的源文件路径不存在：{path}");
+
                     DirectoryInfo info = new DirectoryInfo(path);
                     FileInfo[] pathArr = info.GetFiles("*", SearchOption.AllDirectories);
                     foreach (var fileInfo in pathArr)
@@ -429,7 +457,7 @@ namespace ZM.ZMAsset
                     info.bundleModule = _mBundleModuleName.ToString();
                     info.isAddressableAsset = mBuildModuleData.isAddressableAsset;
                     info.bundleDependce = new List<string>();
-                    EditorUtility.DisplayProgressBar("写入AssetBundle配置", "ABName:" + allBundleFilePathDic[filePath], index * 1.0f / allBundleFilePathDic.Count);
+                    ZMBuildProgress.Report("写入配置", allBundleFilePathDic[filePath], .44f + .04f * index / Mathf.Max(1, allBundleFilePathDic.Count));
                     
                     string[] dependence= AssetDatabase.GetDependencies(filePath);
                     foreach (var dePath in dependence)
@@ -449,6 +477,7 @@ namespace ZM.ZMAsset
                     }
 
                     config.bundleInfoList.Add(info);
+                    index++;
                 }
             }
             //生成AsestBundle配置文件
@@ -475,7 +504,7 @@ namespace ZM.ZMAsset
             foreach (var item in mAllFolderBundleDic)
             {
                 i++;
-                EditorUtility.DisplayProgressBar("Modify AssetBundle Name","Name:"+item.Key, i*1.0f/mAllFolderBundleDic.Count);
+                ZMBuildProgress.Report("生成构建列表", item.Key, .38f + .04f * i / Mathf.Max(1, mAllFolderBundleDic.Count));
                 mBundleBuildList.Add(new AssetBundleBuild(){ assetBundleName =$"{item.Key.ToLower()}{BundleSettings.Instance.ABSUFFIX}" , assetNames = item.Value.ToArray() });
             }
             //收集所有要打包的预制体Bundle
@@ -483,7 +512,7 @@ namespace ZM.ZMAsset
             foreach (var item in mAllPrefabsBundleDic)
             {
                 i++;
-                EditorUtility.DisplayProgressBar("Modify AssetBundle Name", "Name:" + item.Key, i * 1.0f / mAllPrefabsBundleDic.Count);
+                ZMBuildProgress.Report("生成构建列表", item.Key, .42f + .04f * i / Mathf.Max(1, mAllPrefabsBundleDic.Count));
                 mBundleBuildList.Add(new AssetBundleBuild(){ assetBundleName = $"{item.Key.ToLower()}{BundleSettings.Instance.ABSUFFIX}", assetNames = item.Value.ToArray() });
             }
             
@@ -546,10 +575,9 @@ namespace ZM.ZMAsset
                 FileInfo[] fileInfoArr = directoryInfo.GetFiles("*", SearchOption.AllDirectories);
                 for (int i = 0; i < fileInfoArr.Length; i++)
                 {
-                    EditorUtility.DisplayProgressBar("加密文件", "Name:" + fileInfoArr[i].Name, i * 1.0f / fileInfoArr.Length);
+                    ZMBuildProgress.Report("加密文件", fileInfoArr[i].Name, .82f + .08f * i / Mathf.Max(1, fileInfoArr.Length));
                     AES.AESFileEncrypt(fileInfoArr[i].FullName, BundleSettings.Instance.bundleEncrypt.encryptKey);
                 }
-                EditorUtility.ClearProgressBar();
                 Debug.Log("AssetBundle Encrypt Finish!");
             }
         }
@@ -565,12 +593,11 @@ namespace ZM.ZMAsset
             {
                 if (fileInfoArr[i].Name.Contains("hotscript"))
                 {
-                    EditorUtility.DisplayProgressBar("加密文件", "Name:" + fileInfoArr[i].Name, i * 1.0f / fileInfoArr.Length);
+                    ZMBuildProgress.Report("加密热更脚本", fileInfoArr[i].Name, .84f + .04f * i / Mathf.Max(1, fileInfoArr.Length));
                     AES.AESFileEncrypt(fileInfoArr[i].FullName, BundleSettings.Instance.bundleEncrypt.encryptKey);
                     Debug.Log($"AssetBundle Encrypt Finish name:{fileInfoArr[i].Name} {BundleSettings.Instance.bundleEncrypt.encryptKey}");
                 }
             }
-            EditorUtility.ClearProgressBar();
             Debug.Log("AssetBundle Encrypt Finish!");
         }
         /// <summary>
@@ -594,14 +621,13 @@ namespace ZM.ZMAsset
 
             for (int i = 0; i < fileInfoArr.Length; i++)
             {
-                EditorUtility.DisplayProgressBar("内嵌资源中", "Name:" + fileInfoArr[i].Name, i * 1.0f / fileInfoArr.Length);
+                ZMBuildProgress.Report("内嵌资源", fileInfoArr[i].Name, i * 1.0f / Mathf.Max(1, fileInfoArr.Length));
                 //拷贝文件
                 File.Copy(fileInfoArr[i].FullName, streamingAssetsPath+ fileInfoArr[i].Name);
             }
 
             AssetDatabase.Refresh();
 
-            EditorUtility.ClearProgressBar();
             if (showTips)
             {
                 EditorUtility.DisplayDialog("内嵌操作","内嵌资源完成 Path："+ streamingAssetsPath,"确认");
@@ -652,7 +678,7 @@ namespace ZM.ZMAsset
             for (int i = 0; i < bundlePatchArr.Length; i++)
             {
                 string path = bundlePatchArr[i];
-                EditorUtility.DisplayProgressBar("生成热更文件", "Name:" + Path.GetFileName(path), i * 1.0f / bundlePatchArr.Length);
+                ZMBuildProgress.Report("生成热更文件", Path.GetFileName(path), .90f + .08f * i / Mathf.Max(1, bundlePatchArr.Length));
                 string disPath = mHotAssetsOutPutPath + Path.GetFileName(path);
 
                 File.Copy(path,disPath);
@@ -717,8 +743,27 @@ namespace ZM.ZMAsset
         }
         [MenuItem("ZM/HotBundleFolder")]
         public static void OpenHotBundleFolder()
-        { 
+        {
             EditorUtility.RevealInFinder(Application.dataPath + "/../HotAssets/");
+        }
+
+        public static void OpenHotBundleFolder(string moduleName, string appVersion, string patchVersion, UnityEditor.BuildTarget buildTarget)
+        {
+            string path = Path.GetFullPath(Path.Combine(
+                Application.dataPath,
+                "..",
+                "HotAssets",
+                string.IsNullOrEmpty(moduleName) ? string.Empty : moduleName,
+                string.IsNullOrEmpty(appVersion) ? "0.0.0" : appVersion,
+                string.IsNullOrEmpty(patchVersion) ? "0" : patchVersion,
+                buildTarget.ToString()));
+
+            Directory.CreateDirectory(path);
+            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
+            {
+                FileName = path,
+                UseShellExecute = true
+            });
         }
         [MenuItem("ZM/PersistentFolder")]
         public static void OpenPersistentFolder()

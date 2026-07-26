@@ -1,86 +1,65 @@
-﻿/*---------------------------------------------------------------------------------------------------------------------------------------------
-*
-* Title: ZMAsset
-*
-* Description: 可视化多模块打包器、多模块热更、多线程下载、多版本热更、多版本回退、加密、解密、内嵌、解压、内存引用计数、大型对象池、AssetBundle加载、Editor加载
-*
-* Author: ZM
-*
-* Date: 2023.4.13
-*
-* Modify: 
-------------------------------------------------------------------------------------------------------------------------------------------------*/
-using System.Collections;
+using System;
 using System.Collections.Generic;
-using UnityEngine;
+using System.IO;
 using UnityEditor;
+using UnityEngine;
 using ZM.ZMAsset;
-using Sirenix.Utilities.Editor;
+
+[Serializable]
 public class BuildBundleWindow : BundleBehaviour
 {
-    protected string[] buildButtonsNameArr = new string[] { "打包资源", "内嵌资源" };
-    
     public override void DrawBuildButtons()
     {
-        base.DrawBuildButtons();
-        GUILayout.BeginArea(new Rect(0, 555, 800, 600));
-
-        GUILayout.BeginHorizontal();
-        
-        for (int i = 0; i < buildButtonsNameArr.Length; i++)
+        GUILayout.Space(4);
+        using (new EditorGUILayout.HorizontalScope(GUILayout.Height(78)))
         {
-            GUIStyle style = UnityEditorUility.GetGUIStyle("PreButtonBlue");
-            style.fixedHeight = 55;
-
-            if (GUILayout.Button(buildButtonsNameArr[i], style, GUILayout.Height(400)))
+            GUILayout.Space(34);
+            GUILayout.Label("输出目录", ZMBuildStyles.StatusLabel, GUILayout.Width(66), GUILayout.Height(48));
+            Rect outputRect = GUILayoutUtility.GetRect(270, 38, GUILayout.Width(270), GUILayout.Height(38));
+            outputRect.y += 5;
+            GUI.Box(outputRect, GUIContent.none, ZMBuildStyles.FieldBox);
+            GUI.Label(outputRect, $"AssetBundle/{EditorUserBuildSettings.activeBuildTarget}", ZMBuildStyles.FlatField);
+            Rect folderRect = new Rect(outputRect.xMax - 35, outputRect.y + 1, 34, outputRect.height - 2);
+            EditorGUI.DrawRect(new Rect(folderRect.x, folderRect.y, 1, folderRect.height), ZMBuildStyles.Border);
+            Texture fieldFolder = EditorGUIUtility.IconContent("Folder Icon").image;
+            if (fieldFolder != null) GUI.DrawTexture(new Rect(folderRect.x + 8, folderRect.y + 8, 19, 19), fieldFolder, ScaleMode.ScaleToFit);
+            EditorGUIUtility.AddCursorRect(folderRect, MouseCursor.Link);
+            if (GUI.Button(folderRect, GUIContent.none, GUIStyle.none)) BuildBundleCompiler.OpenAssetBundleFolder();
+            GUILayout.FlexibleSpace();
+            using (new EditorGUI.DisabledScope(SelectedCount == 0))
             {
-                if (i == 0)
-                {
-                    //打包AssetBundle按钮事件
-                    BuildBundle();
-                    GUIHelper.ExitGUI(true);
-                }
-                else
-                {
+                if (GUILayout.Button("内嵌到 StreamingAssets", ZMBuildStyles.SecondaryButton, GUILayout.Width(205)))
                     CopyBundleToStreamingAssetsPath();
-                }
-                GUIUtility.ExitGUI();
+                GUILayout.Space(12);
+                if (GUILayout.Button("开始构建资源", ZMBuildStyles.PrimaryButton, GUILayout.Width(205)))
+                    BuildBundle();
             }
+            GUILayout.Space(34);
         }
-
-        //打包图标绘制完成
-        GUI.DrawTexture(new Rect(130,13,30,30),EditorGUIUtility.IconContent(curPlatfam).image);
-        //内嵌资源图标绘制完成
-        GUI.DrawTexture(new Rect(545, 13, 30, 30), EditorGUIUtility.IconContent("SceneSet Icon").image);
-
-        GUILayout.EndHorizontal();
-
-        GUILayout.EndArea();
     }
 
     public override void BuildBundle()
     {
-        base.BuildBundle();
-        foreach (var item in moduleDataList)
-        {
+        var jobs = new List<(string name, Func<System.Collections.IEnumerator> action)>();
+        foreach (BundleModuleData item in moduleDataList)
             if (item.isBuild)
             {
-                BuildBundleCompiler.BuildAssetBundle(item);
+                BundleModuleData module = item;
+                jobs.Add((module.moduleName, () => BuildBundleCompiler.BuildAssetBundleStaged(module)));
             }
-        }
+        string output = Path.GetFullPath(Path.Combine(Application.dataPath, "..", "AssetBundle"));
+        ZMBuildProgress.RunStaged("资源构建", jobs, output);
     }
 
-    /// <summary>
-    /// 内嵌资源
-    /// </summary>
     public void CopyBundleToStreamingAssetsPath()
     {
-        foreach (var item in moduleDataList)
-        {
+        var jobs = new List<(string name, Action action)>();
+        foreach (BundleModuleData item in moduleDataList)
             if (item.isBuild)
             {
-                BuildBundleCompiler.CopyBundleToStramingAssets(item);
+                BundleModuleData module = item;
+                jobs.Add((module.moduleName, () => BuildBundleCompiler.CopyBundleToStramingAssets(module, false)));
             }
-        }
+        ZMBuildProgress.Run("内嵌资源", jobs, Application.streamingAssetsPath);
     }
 }

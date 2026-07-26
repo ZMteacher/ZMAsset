@@ -1,614 +1,418 @@
 {
   "bundleInfoList": [
     {
-      "path": "Assets/GameData/GameItem/6001/6001.prefab",
-      "crc": 1296549914,
-      "bundleName": "gameitem_6001.uab",
-      "assetName": "6001.prefab",
+      "path": "Assets/SphereMaterial.mat",
+      "crc": 3842364351,
+      "bundleName": "gameitem_cube 1.uab",
+      "assetName": "SphereMaterial.mat",
       "bundleModule": "GameItem",
       "isAddressableAsset": false,
       "bundleDependce": [
-        "gameitem_6001.uab"
+        "gameitem_cube 1.uab"
       ]
     },
     {
-      "path": "Assets/GameData/GameItem/6001/huafei.png",
-      "crc": 67507990,
-      "bundleName": "gameitem_6001.uab",
-      "assetName": "huafei.png",
-      "bundleModule": "GameItem",
-      "isAddressableAsset": false,
-      "bundleDependce": []
-    },
-    {
-      "path": "Assets/GameData/GameItem/6001/大厅 1.jpg",
-      "crc": 3998522958,
-      "bundleName": "gameitem_6001.uab",
-      "assetName": "大厅 1.jpg",
-      "bundleModule": "GameItem",
-      "isAddressableAsset": false,
-      "bundleDependce": []
-    },
-    {
-      "path": "Assets/GameData/GameItem/6001/大厅 2.jpg",
-      "crc": 2851398814,
-      "bundleName": "gameitem_6001.uab",
-      "assetName": "大厅 2.jpg",
-      "bundleModule": "GameItem",
-      "isAddressableAsset": false,
-      "bundleDependce": []
-    },
-    {
-      "path": "Assets/GameData/GameItem/6002/6002.prefab",
-      "crc": 2114102071,
-      "bundleName": "gameitem_6002.uab",
-      "assetName": "6002.prefab",
+      "path": "Assets/Prefabs/Cube 1.prefab",
+      "crc": 3006949522,
+      "bundleName": "gameitem_cube 1.uab",
+      "assetName": "Cube 1.prefab",
       "bundleModule": "GameItem",
       "isAddressableAsset": false,
       "bundleDependce": [
-        "gameitem_6002.uab"
+        "gameitem_cube 1.uab"
       ]
     },
     {
-      "path": "Assets/GameData/GameItem/6002/jingdongka.png",
-      "crc": 3177986687,
-      "bundleName": "gameitem_6002.uab",
-      "assetName": "jingdongka.png",
-      "bundleModule": "GameItem",
-      "isAddressableAsset": false,
-      "bundleDependce": []
-    },
-    {
-      "path": "Assets/GameData/GameItem/6002/大厅 1.jpg",
-      "crc": 2452994965,
-      "bundleName": "gameitem_6002.uab",
-      "assetName": "大厅 1.jpg",
-      "bundleModule": "GameItem",
-      "isAddressableAsset": false,
-      "bundleDependce": []
-    },
-    {
-      "path": "Assets/GameData/GameItem/6002/大厅 2.jpg",
-      "crc": 3583361349,
-      "bundleName": "gameitem_6002.uab",
-      "assetName": "大厅 2.jpg",
-      "bundleModule": "GameItem",
-      "isAddressableAsset": false,
-      "bundleDependce": []
-    },
-    {
-      "path": "Assets/GameData/GameItem/6003/1000jingdongka.png",
-      "crc": 2808750490,
-      "bundleName": "gameitem_6003.uab",
-      "assetName": "1000jingdongka.png",
-      "bundleModule": "GameItem",
-      "isAddressableAsset": false,
-      "bundleDependce": []
-    },
-    {
-      "path": "Assets/GameData/GameItem/6003/6003.prefab",
-      "crc": 1866365484,
-      "bundleName": "gameitem_6003.uab",
-      "assetName": "6003.prefab",
+      "path": "Assets/CuboMaterial.mat",
+      "crc": 3618863018,
+      "bundleName": "gameitem_cube 1.uab",
+      "assetName": "CuboMaterial.mat",
       "bundleModule": "GameItem",
       "isAddressableAsset": false,
       "bundleDependce": [
-        "gameitem_6003.uab"
+        "gameitem_cube 1.uab"
       ]
     },
     {
-      "path": "Assets/GameData/GameItem/6003/大厅 1.jpg",
-      "crc": 255482595,
-      "bundleName": "gameitem_6003.uab",
-      "assetName": "大厅 1.jpg",
+      "path": "Assets/Textures/Textures1 4/Texture.png",
+      "crc": 3552600057,
+      "bundleName": "gameitem_cube 1.uab",
+      "assetName": "Texture.png",
       "bundleModule": "GameItem",
       "isAddressableAsset": false,
       "bundleDependce": []
     },
     {
-      "path": "Assets/GameData/GameItem/6003/大厅 2.jpg",
-      "crc": 1218060339,
-      "bundleName": "gameitem_6003.uab",
-      "assetName": "大厅 2.jpg",
+      "path": "Assets/Textures/Textures1 9/Texture.png",
+      "crc": 2498510727,
+      "bundleName": "gameitem_cube 1.uab",
+      "assetName": "Texture.png",
       "bundleModule": "GameItem",
       "isAddressableAsset": false,
       "bundleDependce": []
     },
     {
-      "path": "Assets/GameData/GameItem/6004/10beimianfeika.png",
-      "crc": 585637295,
-      "bundleName": "gameitem_6004.uab",
-      "assetName": "10beimianfeika.png",
-      "bundleModule": "GameItem",
-      "isAddressableAsset": false,
-      "bundleDependce": []
-    },
-    {
-      "path": "Assets/GameData/GameItem/6004/6004.prefab",
-      "crc": 411596141,
-      "bundleName": "gameitem_6004.uab",
-      "assetName": "6004.prefab",
+      "path": "Assets/Prefabs/Cube 2.prefab",
+      "crc": 1035300721,
+      "bundleName": "gameitem_cube 2.uab",
+      "assetName": "Cube 2.prefab",
       "bundleModule": "GameItem",
       "isAddressableAsset": false,
       "bundleDependce": [
-        "gameitem_6004.uab"
+        "gameitem_cube 1.uab"
       ]
     },
     {
-      "path": "Assets/GameData/GameItem/6004/大厅 1.jpg",
-      "crc": 1794633763,
-      "bundleName": "gameitem_6004.uab",
-      "assetName": "大厅 1.jpg",
-      "bundleModule": "GameItem",
-      "isAddressableAsset": false,
-      "bundleDependce": []
-    },
-    {
-      "path": "Assets/GameData/GameItem/6004/大厅 2.jpg",
-      "crc": 760711923,
-      "bundleName": "gameitem_6004.uab",
-      "assetName": "大厅 2.jpg",
-      "bundleModule": "GameItem",
-      "isAddressableAsset": false,
-      "bundleDependce": []
-    },
-    {
-      "path": "Assets/GameData/GameItem/6005/50beimianfeika.png",
-      "crc": 1277686255,
-      "bundleName": "gameitem_6005.uab",
-      "assetName": "50beimianfeika.png",
-      "bundleModule": "GameItem",
-      "isAddressableAsset": false,
-      "bundleDependce": []
-    },
-    {
-      "path": "Assets/GameData/GameItem/6005/6005.prefab",
-      "crc": 162835574,
-      "bundleName": "gameitem_6005.uab",
-      "assetName": "6005.prefab",
+      "path": "Assets/Prefabs/Cube 3.prefab",
+      "crc": 4045369327,
+      "bundleName": "gameitem_cube 3.uab",
+      "assetName": "Cube 3.prefab",
       "bundleModule": "GameItem",
       "isAddressableAsset": false,
       "bundleDependce": [
-        "gameitem_6005.uab"
+        "gameitem_cube 1.uab"
       ]
     },
     {
-      "path": "Assets/GameData/GameItem/6005/大厅 1.jpg",
-      "crc": 4160229717,
-      "bundleName": "gameitem_6005.uab",
-      "assetName": "大厅 1.jpg",
-      "bundleModule": "GameItem",
-      "isAddressableAsset": false,
-      "bundleDependce": []
-    },
-    {
-      "path": "Assets/GameData/GameItem/6005/大厅 2.jpg",
-      "crc": 2958584709,
-      "bundleName": "gameitem_6005.uab",
-      "assetName": "大厅 2.jpg",
-      "bundleModule": "GameItem",
-      "isAddressableAsset": false,
-      "bundleDependce": []
-    },
-    {
-      "path": "Assets/GameData/GameItem/6006/100beimianfeika.png",
-      "crc": 3026702094,
-      "bundleName": "gameitem_6006.uab",
-      "assetName": "100beimianfeika.png",
-      "bundleModule": "GameItem",
-      "isAddressableAsset": false,
-      "bundleDependce": []
-    },
-    {
-      "path": "Assets/GameData/GameItem/6006/6006.prefab",
-      "crc": 988923739,
-      "bundleName": "gameitem_6006.uab",
-      "assetName": "6006.prefab",
+      "path": "Assets/Prefabs/Cube 4.prefab",
+      "crc": 4225394422,
+      "bundleName": "gameitem_cube 4.uab",
+      "assetName": "Cube 4.prefab",
       "bundleModule": "GameItem",
       "isAddressableAsset": false,
       "bundleDependce": [
-        "gameitem_6006.uab"
+        "gameitem_cube 1.uab"
       ]
     },
     {
-      "path": "Assets/GameData/GameItem/6006/大厅 1.jpg",
-      "crc": 2342073486,
-      "bundleName": "gameitem_6006.uab",
-      "assetName": "大厅 1.jpg",
-      "bundleModule": "GameItem",
-      "isAddressableAsset": false,
-      "bundleDependce": []
-    },
-    {
-      "path": "Assets/GameData/GameItem/6006/大厅 2.jpg",
-      "crc": 3426307678,
-      "bundleName": "gameitem_6006.uab",
-      "assetName": "大厅 2.jpg",
-      "bundleModule": "GameItem",
-      "isAddressableAsset": false,
-      "bundleDependce": []
-    },
-    {
-      "path": "Assets/GameData/GameItem/6007/6007.prefab",
-      "crc": 734862912,
-      "bundleName": "gameitem_6007.uab",
-      "assetName": "6007.prefab",
+      "path": "Assets/Prefabs/Cube 5.prefab",
+      "crc": 930113128,
+      "bundleName": "gameitem_cube 5.uab",
+      "assetName": "Cube 5.prefab",
       "bundleModule": "GameItem",
       "isAddressableAsset": false,
       "bundleDependce": [
-        "gameitem_6007.uab"
+        "gameitem_cube 1.uab"
       ]
     },
     {
-      "path": "Assets/GameData/GameItem/6007/huafeikaliantong.png",
-      "crc": 2310325193,
-      "bundleName": "gameitem_6007.uab",
-      "assetName": "huafeikaliantong.png",
-      "bundleModule": "GameItem",
-      "isAddressableAsset": false,
-      "bundleDependce": []
-    },
-    {
-      "path": "Assets/GameData/GameItem/6007/大厅 1.jpg",
-      "crc": 378983928,
-      "bundleName": "gameitem_6007.uab",
-      "assetName": "大厅 1.jpg",
-      "bundleModule": "GameItem",
-      "isAddressableAsset": false,
-      "bundleDependce": []
-    },
-    {
-      "path": "Assets/GameData/GameItem/6007/大厅 2.jpg",
-      "crc": 1362538280,
-      "bundleName": "gameitem_6007.uab",
-      "assetName": "大厅 2.jpg",
-      "bundleModule": "GameItem",
-      "isAddressableAsset": false,
-      "bundleDependce": []
-    },
-    {
-      "path": "Assets/GameData/GameItem/6008/6008.prefab",
-      "crc": 3583891929,
-      "bundleName": "gameitem_6008.uab",
-      "assetName": "6008.prefab",
+      "path": "Assets/Prefabs/Cube 6.prefab",
+      "crc": 3120521611,
+      "bundleName": "gameitem_cube 6.uab",
+      "assetName": "Cube 6.prefab",
       "bundleModule": "GameItem",
       "isAddressableAsset": false,
       "bundleDependce": [
-        "gameitem_6008.uab"
+        "gameitem_cube 1.uab"
       ]
     },
     {
-      "path": "Assets/GameData/GameItem/6008/huafeikaliantong100.png",
-      "crc": 739750535,
-      "bundleName": "gameitem_6008.uab",
-      "assetName": "huafeikaliantong100.png",
-      "bundleModule": "GameItem",
-      "isAddressableAsset": false,
-      "bundleDependce": []
-    },
-    {
-      "path": "Assets/GameData/GameItem/6008/大厅 1.jpg",
-      "crc": 1073897742,
-      "bundleName": "gameitem_6008.uab",
-      "assetName": "大厅 1.jpg",
-      "bundleModule": "GameItem",
-      "isAddressableAsset": false,
-      "bundleDependce": []
-    },
-    {
-      "path": "Assets/GameData/GameItem/6008/大厅 2.jpg",
-      "crc": 128064478,
-      "bundleName": "gameitem_6008.uab",
-      "assetName": "大厅 2.jpg",
-      "bundleModule": "GameItem",
-      "isAddressableAsset": false,
-      "bundleDependce": []
-    },
-    {
-      "path": "Assets/GameData/GameItem/6009/6009.prefab",
-      "crc": 3298885826,
-      "bundleName": "gameitem_6009.uab",
-      "assetName": "6009.prefab",
+      "path": "Assets/Prefabs/Cube 7.prefab",
+      "crc": 1968529685,
+      "bundleName": "gameitem_cube 7.uab",
+      "assetName": "Cube 7.prefab",
       "bundleModule": "GameItem",
       "isAddressableAsset": false,
       "bundleDependce": [
-        "gameitem_6009.uab"
+        "gameitem_cube 1.uab"
       ]
     },
     {
-      "path": "Assets/GameData/GameItem/6009/huafeikayidong.png",
-      "crc": 92412343,
-      "bundleName": "gameitem_6009.uab",
-      "assetName": "huafeikayidong.png",
-      "bundleModule": "GameItem",
-      "isAddressableAsset": false,
-      "bundleDependce": []
-    },
-    {
-      "path": "Assets/GameData/GameItem/6009/大厅 1.jpg",
-      "crc": 3708649592,
-      "bundleName": "gameitem_6009.uab",
-      "assetName": "大厅 1.jpg",
-      "bundleModule": "GameItem",
-      "isAddressableAsset": false,
-      "bundleDependce": []
-    },
-    {
-      "path": "Assets/GameData/GameItem/6009/大厅 2.jpg",
-      "crc": 2595093160,
-      "bundleName": "gameitem_6009.uab",
-      "assetName": "大厅 2.jpg",
-      "bundleModule": "GameItem",
-      "isAddressableAsset": false,
-      "bundleDependce": []
-    },
-    {
-      "path": "Assets/GameData/GameItem/6010/6010.prefab",
-      "crc": 3591365684,
-      "bundleName": "gameitem_6010.uab",
-      "assetName": "6010.prefab",
+      "path": "Assets/Prefabs/Cube 8.prefab",
+      "crc": 2893378489,
+      "bundleName": "gameitem_cube 8.uab",
+      "assetName": "Cube 8.prefab",
       "bundleModule": "GameItem",
       "isAddressableAsset": false,
       "bundleDependce": [
-        "gameitem_6010.uab"
+        "gameitem_cube 1.uab"
       ]
     },
     {
-      "path": "Assets/GameData/GameItem/6010/huafeikayidong100.png",
-      "crc": 1050799255,
-      "bundleName": "gameitem_6010.uab",
-      "assetName": "huafeikayidong100.png",
-      "bundleModule": "GameItem",
-      "isAddressableAsset": false,
-      "bundleDependce": []
-    },
-    {
-      "path": "Assets/GameData/GameItem/6010/大厅 1.jpg",
-      "crc": 3399525584,
-      "bundleName": "gameitem_6010.uab",
-      "assetName": "大厅 1.jpg",
-      "bundleModule": "GameItem",
-      "isAddressableAsset": false,
-      "bundleDependce": []
-    },
-    {
-      "path": "Assets/GameData/GameItem/6010/大厅 2.jpg",
-      "crc": 2365644288,
-      "bundleName": "gameitem_6010.uab",
-      "assetName": "大厅 2.jpg",
-      "bundleModule": "GameItem",
-      "isAddressableAsset": false,
-      "bundleDependce": []
-    },
-    {
-      "path": "Assets/GameData/GameItem/6011/6011.prefab",
-      "crc": 3342023983,
-      "bundleName": "gameitem_6011.uab",
-      "assetName": "6011.prefab",
+      "path": "Assets/Prefabs/Cube 9.prefab",
+      "crc": 1625256743,
+      "bundleName": "gameitem_cube 9.uab",
+      "assetName": "Cube 9.prefab",
       "bundleModule": "GameItem",
       "isAddressableAsset": false,
       "bundleDependce": [
-        "gameitem_6011.uab"
+        "gameitem_cube 1.uab"
       ]
     },
     {
-      "path": "Assets/GameData/GameItem/6011/zadan.png",
-      "crc": 3332939973,
-      "bundleName": "gameitem_6011.uab",
-      "assetName": "zadan.png",
-      "bundleModule": "GameItem",
-      "isAddressableAsset": false,
-      "bundleDependce": []
-    },
-    {
-      "path": "Assets/GameData/GameItem/6011/大厅 1.jpg",
-      "crc": 1471104422,
-      "bundleName": "gameitem_6011.uab",
-      "assetName": "大厅 1.jpg",
-      "bundleModule": "GameItem",
-      "isAddressableAsset": false,
-      "bundleDependce": []
-    },
-    {
-      "path": "Assets/GameData/GameItem/6011/大厅 2.jpg",
-      "crc": 269434742,
-      "bundleName": "gameitem_6011.uab",
-      "assetName": "大厅 2.jpg",
-      "bundleModule": "GameItem",
-      "isAddressableAsset": false,
-      "bundleDependce": []
-    },
-    {
-      "path": "Assets/GameData/GameItem/6012/2.png",
-      "crc": 1187240809,
-      "bundleName": "gameitem_6012.uab",
-      "assetName": "2.png",
-      "bundleModule": "GameItem",
-      "isAddressableAsset": false,
-      "bundleDependce": []
-    },
-    {
-      "path": "Assets/GameData/GameItem/6012/6012.prefab",
-      "crc": 4101395970,
-      "bundleName": "gameitem_6012.uab",
-      "assetName": "6012.prefab",
+      "path": "Assets/Prefabs/Cube 10.prefab",
+      "crc": 3590886971,
+      "bundleName": "gameitem_cube 10.uab",
+      "assetName": "Cube 10.prefab",
       "bundleModule": "GameItem",
       "isAddressableAsset": false,
       "bundleDependce": [
-        "gameitem_6012.uab"
+        "gameitem_cube 1.uab"
       ]
     },
     {
-      "path": "Assets/GameData/GameItem/6012/大厅 1.jpg",
-      "crc": 734945405,
-      "bundleName": "gameitem_6012.uab",
-      "assetName": "大厅 1.jpg",
-      "bundleModule": "GameItem",
-      "isAddressableAsset": false,
-      "bundleDependce": []
-    },
-    {
-      "path": "Assets/GameData/GameItem/6012/大厅 2.jpg",
-      "crc": 1819155117,
-      "bundleName": "gameitem_6012.uab",
-      "assetName": "大厅 2.jpg",
-      "bundleModule": "GameItem",
-      "isAddressableAsset": false,
-      "bundleDependce": []
-    },
-    {
-      "path": "Assets/GameData/GameItem/6013/6013.prefab",
-      "crc": 3846868761,
-      "bundleName": "gameitem_6013.uab",
-      "assetName": "6013.prefab",
+      "path": "Assets/Prefabs/Cube 11.prefab",
+      "crc": 446863013,
+      "bundleName": "gameitem_cube 11.uab",
+      "assetName": "Cube 11.prefab",
       "bundleModule": "GameItem",
       "isAddressableAsset": false,
       "bundleDependce": [
-        "gameitem_6006.uab",
-        "gameitem_6013.uab",
-        "gameitem_6004.uab"
+        "gameitem_cube 1.uab"
       ]
     },
     {
-      "path": "Assets/GameData/GameItem/6013/zuanshi_4.png",
-      "crc": 1185450300,
-      "bundleName": "gameitem_6013.uab",
-      "assetName": "zuanshi_4.png",
-      "bundleModule": "GameItem",
-      "isAddressableAsset": false,
-      "bundleDependce": []
-    },
-    {
-      "path": "Assets/GameData/GameItem/6013/大厅 1.jpg",
-      "crc": 3066134795,
-      "bundleName": "gameitem_6013.uab",
-      "assetName": "大厅 1.jpg",
-      "bundleModule": "GameItem",
-      "isAddressableAsset": false,
-      "bundleDependce": []
-    },
-    {
-      "path": "Assets/GameData/GameItem/6013/大厅 2.jpg",
-      "crc": 4049730523,
-      "bundleName": "gameitem_6013.uab",
-      "assetName": "大厅 2.jpg",
-      "bundleModule": "GameItem",
-      "isAddressableAsset": false,
-      "bundleDependce": []
-    },
-    {
-      "path": "Assets/GameData/GameItem/6014/6014.prefab",
-      "crc": 2466021464,
-      "bundleName": "gameitem_6014.uab",
-      "assetName": "6014.prefab",
+      "path": "Assets/Prefabs/Cube 12.prefab",
+      "crc": 2486014278,
+      "bundleName": "gameitem_cube 12.uab",
+      "assetName": "Cube 12.prefab",
       "bundleModule": "GameItem",
       "isAddressableAsset": false,
       "bundleDependce": [
-        "gameitem_6014.uab"
+        "gameitem_cube 1.uab"
       ]
     },
     {
-      "path": "Assets/GameData/GameItem/6014/zuanshi_6.png",
-      "crc": 2808730950,
-      "bundleName": "gameitem_6014.uab",
-      "assetName": "zuanshi_6.png",
-      "bundleModule": "GameItem",
-      "isAddressableAsset": false,
-      "bundleDependce": []
-    },
-    {
-      "path": "Assets/GameData/GameItem/6014/大厅 1.jpg",
-      "crc": 3540790219,
-      "bundleName": "gameitem_6014.uab",
-      "assetName": "大厅 1.jpg",
-      "bundleModule": "GameItem",
-      "isAddressableAsset": false,
-      "bundleDependce": []
-    },
-    {
-      "path": "Assets/GameData/GameItem/6014/大厅 2.jpg",
-      "crc": 2494320923,
-      "bundleName": "gameitem_6014.uab",
-      "assetName": "大厅 2.jpg",
-      "bundleModule": "GameItem",
-      "isAddressableAsset": false,
-      "bundleDependce": []
-    },
-    {
-      "path": "Assets/GameData/GameItem/6015/6015.prefab",
-      "crc": 2210421059,
-      "bundleName": "gameitem_6015.uab",
-      "assetName": "6015.prefab",
+      "path": "Assets/Prefabs/Cube 13.prefab",
+      "crc": 1485279704,
+      "bundleName": "gameitem_cube 13.uab",
+      "assetName": "Cube 13.prefab",
       "bundleModule": "GameItem",
       "isAddressableAsset": false,
       "bundleDependce": [
-        "gameitem_6015.uab"
+        "gameitem_cube 1.uab"
       ]
     },
     {
-      "path": "Assets/GameData/GameItem/6015/chibang_emo.png",
-      "crc": 3395741832,
-      "bundleName": "gameitem_6015.uab",
-      "assetName": "chibang_emo.png",
-      "bundleModule": "GameItem",
-      "isAddressableAsset": false,
-      "bundleDependce": []
-    },
-    {
-      "path": "Assets/GameData/GameItem/6015/大厅 1.jpg",
-      "crc": 1308871357,
-      "bundleName": "gameitem_6015.uab",
-      "assetName": "大厅 1.jpg",
-      "bundleModule": "GameItem",
-      "isAddressableAsset": false,
-      "bundleDependce": []
-    },
-    {
-      "path": "Assets/GameData/GameItem/6015/大厅 2.jpg",
-      "crc": 161722477,
-      "bundleName": "gameitem_6015.uab",
-      "assetName": "大厅 2.jpg",
-      "bundleModule": "GameItem",
-      "isAddressableAsset": false,
-      "bundleDependce": []
-    },
-    {
-      "path": "Assets/GameData/GameItem/6016/6016.prefab",
-      "crc": 2961519214,
-      "bundleName": "gameitem_6016.uab",
-      "assetName": "6016.prefab",
+      "path": "Assets/Prefabs/Cube 14.prefab",
+      "crc": 1380096193,
+      "bundleName": "gameitem_cube 14.uab",
+      "assetName": "Cube 14.prefab",
       "bundleModule": "GameItem",
       "isAddressableAsset": false,
       "bundleDependce": [
-        "gameitem_6016.uab"
+        "gameitem_cube 1.uab"
       ]
     },
     {
-      "path": "Assets/GameData/GameItem/6016/chibang_anhui.png",
-      "crc": 145497221,
-      "bundleName": "gameitem_6016.uab",
-      "assetName": "chibang_anhui.png",
+      "path": "Assets/Prefabs/Cube 15.prefab",
+      "crc": 2666043487,
+      "bundleName": "gameitem_cube 15.uab",
+      "assetName": "Cube 15.prefab",
       "bundleModule": "GameItem",
       "isAddressableAsset": false,
-      "bundleDependce": []
+      "bundleDependce": [
+        "gameitem_cube 1.uab"
+      ]
     },
     {
-      "path": "Assets/GameData/GameItem/6016/大厅 1.jpg",
-      "crc": 845344614,
-      "bundleName": "gameitem_6016.uab",
-      "assetName": "大厅 1.jpg",
+      "path": "Assets/Prefabs/Cube 16.prefab",
+      "crc": 275226556,
+      "bundleName": "gameitem_cube 16.uab",
+      "assetName": "Cube 16.prefab",
       "bundleModule": "GameItem",
       "isAddressableAsset": false,
-      "bundleDependce": []
+      "bundleDependce": [
+        "gameitem_cube 1.uab"
+      ]
     },
     {
-      "path": "Assets/GameData/GameItem/6016/大厅 2.jpg",
-      "crc": 1975686582,
-      "bundleName": "gameitem_6016.uab",
-      "assetName": "大厅 2.jpg",
+      "path": "Assets/Prefabs/Cube 17.prefab",
+      "crc": 3704463138,
+      "bundleName": "gameitem_cube 17.uab",
+      "assetName": "Cube 17.prefab",
       "bundleModule": "GameItem",
       "isAddressableAsset": false,
-      "bundleDependce": []
+      "bundleDependce": [
+        "gameitem_cube 1.uab"
+      ]
+    },
+    {
+      "path": "Assets/Prefabs/Cube 18.prefab",
+      "crc": 99454350,
+      "bundleName": "gameitem_cube 18.uab",
+      "assetName": "Cube 18.prefab",
+      "bundleModule": "GameItem",
+      "isAddressableAsset": false,
+      "bundleDependce": [
+        "gameitem_cube 1.uab"
+      ]
+    },
+    {
+      "path": "Assets/Prefabs/Cube 19.prefab",
+      "crc": 3376909584,
+      "bundleName": "gameitem_cube 19.uab",
+      "assetName": "Cube 19.prefab",
+      "bundleModule": "GameItem",
+      "isAddressableAsset": false,
+      "bundleDependce": [
+        "gameitem_cube 1.uab"
+      ]
+    },
+    {
+      "path": "Assets/Prefabs/Cube 20.prefab",
+      "crc": 4018514686,
+      "bundleName": "gameitem_cube 20.uab",
+      "assetName": "Cube 20.prefab",
+      "bundleModule": "GameItem",
+      "isAddressableAsset": false,
+      "bundleDependce": [
+        "gameitem_cube 1.uab"
+      ]
+    },
+    {
+      "path": "Assets/Prefabs/Cube 21.prefab",
+      "crc": 590326368,
+      "bundleName": "gameitem_cube 21.uab",
+      "assetName": "Cube 21.prefab",
+      "bundleModule": "GameItem",
+      "isAddressableAsset": false,
+      "bundleDependce": [
+        "gameitem_cube 1.uab"
+      ]
+    },
+    {
+      "path": "Assets/Prefabs/Cube 22.prefab",
+      "crc": 2912988547,
+      "bundleName": "gameitem_cube 22.uab",
+      "assetName": "Cube 22.prefab",
+      "bundleModule": "GameItem",
+      "isAddressableAsset": false,
+      "bundleDependce": [
+        "gameitem_cube 1.uab"
+      ]
+    },
+    {
+      "path": "Assets/Prefabs/Cube 23.prefab",
+      "crc": 1628089629,
+      "bundleName": "gameitem_cube 23.uab",
+      "assetName": "Cube 23.prefab",
+      "bundleModule": "GameItem",
+      "isAddressableAsset": false,
+      "bundleDependce": [
+        "gameitem_cube 1.uab"
+      ]
+    },
+    {
+      "path": "Assets/Prefabs/Cube 24.prefab",
+      "crc": 1808770052,
+      "bundleName": "gameitem_cube 24.uab",
+      "assetName": "Cube 24.prefab",
+      "bundleModule": "GameItem",
+      "isAddressableAsset": false,
+      "bundleDependce": [
+        "gameitem_cube 1.uab"
+      ]
+    },
+    {
+      "path": "Assets/Prefabs/Cube 25.prefab",
+      "crc": 2808456346,
+      "bundleName": "gameitem_cube 25.uab",
+      "assetName": "Cube 25.prefab",
+      "bundleModule": "GameItem",
+      "isAddressableAsset": false,
+      "bundleDependce": [
+        "gameitem_cube 1.uab"
+      ]
+    },
+    {
+      "path": "Assets/Prefabs/Cube 26.prefab",
+      "crc": 703243129,
+      "bundleName": "gameitem_cube 26.uab",
+      "assetName": "Cube 26.prefab",
+      "bundleModule": "GameItem",
+      "isAddressableAsset": false,
+      "bundleDependce": [
+        "gameitem_cube 1.uab"
+      ]
+    },
+    {
+      "path": "Assets/Prefabs/Cube 27.prefab",
+      "crc": 3846218727,
+      "bundleName": "gameitem_cube 27.uab",
+      "assetName": "Cube 27.prefab",
+      "bundleModule": "GameItem",
+      "isAddressableAsset": false,
+      "bundleDependce": [
+        "gameitem_cube 1.uab"
+      ]
+    },
+    {
+      "path": "Assets/Prefabs/Cube 28.prefab",
+      "crc": 1012969803,
+      "bundleName": "gameitem_cube 28.uab",
+      "assetName": "Cube 28.prefab",
+      "bundleModule": "GameItem",
+      "isAddressableAsset": false,
+      "bundleDependce": [
+        "gameitem_cube 1.uab"
+      ]
+    },
+    {
+      "path": "Assets/Prefabs/Cube 29.prefab",
+      "crc": 4039815637,
+      "bundleName": "gameitem_cube 29.uab",
+      "assetName": "Cube 29.prefab",
+      "bundleModule": "GameItem",
+      "isAddressableAsset": false,
+      "bundleDependce": [
+        "gameitem_cube 1.uab"
+      ]
+    },
+    {
+      "path": "Assets/Prefabs/Cube 30.prefab",
+      "crc": 4177444541,
+      "bundleName": "gameitem_cube 30.uab",
+      "assetName": "Cube 30.prefab",
+      "bundleModule": "GameItem",
+      "isAddressableAsset": false,
+      "bundleDependce": [
+        "gameitem_cube 1.uab"
+      ]
+    },
+    {
+      "path": "Assets/Prefabs/Cube 31.prefab",
+      "crc": 877968931,
+      "bundleName": "gameitem_cube 31.uab",
+      "assetName": "Cube 31.prefab",
+      "bundleModule": "GameItem",
+      "isAddressableAsset": false,
+      "bundleDependce": [
+        "gameitem_cube 1.uab"
+      ]
+    },
+    {
+      "path": "Assets/Prefabs/Cube 32.prefab",
+      "crc": 3134962112,
+      "bundleName": "gameitem_cube 32.uab",
+      "assetName": "Cube 32.prefab",
+      "bundleModule": "GameItem",
+      "isAddressableAsset": false,
+      "bundleDependce": [
+        "gameitem_cube 1.uab"
+      ]
+    },
+    {
+      "path": "Assets/Prefabs/Cube 33.prefab",
+      "crc": 1987164510,
+      "bundleName": "gameitem_cube 33.uab",
+      "assetName": "Cube 33.prefab",
+      "bundleModule": "GameItem",
+      "isAddressableAsset": false,
+      "bundleDependce": [
+        "gameitem_cube 1.uab"
+      ]
+    },
+    {
+      "path": "Assets/Prefabs/Cube.prefab",
+      "crc": 2986660343,
+      "bundleName": "gameitem_cube.uab",
+      "assetName": "Cube.prefab",
+      "bundleModule": "GameItem",
+      "isAddressableAsset": false,
+      "bundleDependce": [
+        "gameitem_cube 1.uab"
+      ]
     },
     {
       "path": "Assets//ZMPackages/ZMAsset/Config/gameitemassetbundleconfig.json",

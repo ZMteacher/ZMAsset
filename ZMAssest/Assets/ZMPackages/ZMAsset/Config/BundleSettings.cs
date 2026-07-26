@@ -10,7 +10,6 @@
 *
 * Modify: 
 ------------------------------------------------------------------------------------------------------------------------------------------------*/
-using Sirenix.OdinInspector;
 using System.Collections;
 using System.Collections.Generic;
 using System.IO;
@@ -55,50 +54,41 @@ public class BundleSettings : ScriptableObject
 
 
 
-    [TitleGroup("资源加载热更设置"),LabelText("AssetBundle下载地址")]
+    [Tooltip("AssetBundle 下载地址")]
     public string AssetBundleDownLoadUrl;
 
-    [TitleGroup("AssetBundle打包设置")]
-    [LabelText("是否加密AssetBundle")]
+    [Tooltip("AssetBundle 加密设置")]
     public BundleEncryptToggle bundleEncrypt = new BundleEncryptToggle();
 
     //AssetBundle后缀 例：.ab 建议不加后缀，防止内嵌时Unity读取出错
-    [TitleGroup("AssetBundle打包设置")]
-    [LabelText("AssetBundle后缀")]
+    [Tooltip("AssetBundle 后缀；建议不设置后缀，避免内嵌时 Unity 读取异常")]
     public string ABSUFFIX = "";
 
-    [TitleGroup("AssetBundle打包设置")]
-    [LabelText("资源压缩格式")]
+    [Tooltip("资源压缩格式")]
     public BuildAssetBundleOptions buildbundleOptions;
 
-    [TitleGroup("AssetBundle打包设置")]
-    [LabelText("资源打包平台")]
+    [Tooltip("资源打包平台")]
     public BuildTarget buildTarget;
 
 
 
-    [TitleGroup("资源加载热更设置")]
-    [LabelText("资源热更模式")]
+    [Tooltip("资源热更模式")]
     public BundleHotEnum bundleHotType;
 
-    [TitleGroup("资源加载热更设置")]
-    [LabelText("资源加载模式")]
+    [Tooltip("资源加载模式")]
     public LoadAssetEnum loadAssetType;
 
-    [TitleGroup("资源加载热更设置")]
-    [LabelText("最大下载线程数量")]
+    [Tooltip("最大下载线程数量")]
     public int MAX_THREAD_COUNT;
 
-    [TitleGroup("框架相关配置")]
-    [LabelText("ZMAsset框架路径")]
-    [InfoBox("资源框架总路径节点(基于Assets目录下)，若需要修改资源框架存放位置，需要同步到这里")]
+    [Tooltip("资源框架总路径节点（基于 Assets 目录），移动框架后需要同步修改")]
     public string ZMAssetRootPath = "ThirdParty/ZMAsset";
-    [Title("AssetBundle热更文件储存路径")]
+    [Tooltip("AssetBundle 热更文件储存路径")]
     private string HotAssetsPath { get { return Application.persistentDataPath + "/HotAssets/"; } }
-    [Title("AssetBundle解压路径")]
+    [Tooltip("AssetBundle 解压路径")]
     private string BundleDecompressPath { get { return Application.persistentDataPath + "/DecompressAssets/"; } }
 
-    [Title("AssetBundle内嵌文件路径")]
+    [Tooltip("AssetBundle 内嵌文件路径")]
     private string BuiltinAssetsPath { get { return Application.streamingAssetsPath + "/AssetBundle/"; } }
     /// <summary>
     /// 获取资源内嵌的路径
@@ -182,12 +172,12 @@ public class BundleSettings : ScriptableObject
     }
 }
 
-[System.Serializable,Toggle("isEncrypt")]
+[System.Serializable]
 public class BundleEncryptToggle
 {
     //是否加密
     public bool isEncrypt;
-    [LabelText("加密密钥")]
+    [Tooltip("加密密钥")]
     public string encryptKey;
 }
 

@@ -16,33 +16,34 @@ MonoBehaviour:
   - bundleid: 0
     moduleName: Hall
     isAddressableAsset: 0
-    isBuild: 0
+    isBuild: 1
     isAddModule: 0
     lastClickBtnTime: 23.457163
-    prefabPathArr: []
-    rootFolderPathArr: []
+    prefabPathArr:
+    - Assets/Prefabs
+    rootFolderPathArr:
+    - Assets/Textures
     signFolderPathArr: []
     sourceFolderPathArr: []
   - bundleid: 0
     moduleName: GameItem
     isAddressableAsset: 0
-    isBuild: 0
+    isBuild: 1
     isAddModule: 0
     lastClickBtnTime: 1519.311
     prefabPathArr:
-    - Path...
-    rootFolderPathArr:
-    - Assets/GameData/GameItem
+    - Assets/Prefabs
+    rootFolderPathArr: []
     signFolderPathArr: []
-    sourceFolderPathArr: []
+    sourceFolderPathArr:
+    - 
   - bundleid: 0
-    moduleName: AdressAsset
+    moduleName: AddressAsset
     isAddressableAsset: 1
-    isBuild: 0
+    isBuild: 1
     isAddModule: 0
     lastClickBtnTime: 1519.015
     prefabPathArr: []
-    rootFolderPathArr:
-    - Assets/GameData/GameItem
+    rootFolderPathArr: []
     signFolderPathArr: []
     sourceFolderPathArr: []

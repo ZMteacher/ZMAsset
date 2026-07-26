@@ -28,7 +28,7 @@ namespace ZM.ZMAsset
             this.OnHotFinishCallBackAction = hotFinishCallBack; 
             //开始解压游戏内嵌资源
             //网络正常
-            if (BundleSettings.Instance.bundleHotType == BundleHotEnum.Hot && bundleModule == BundleModuleName.AdressAsset)
+            if (BundleSettings.Instance.bundleHotType == BundleHotEnum.Hot && bundleModule == BundleModuleName.AddressAsset)
             {
                 //检测资源版本
                 CheckAssetsVersion(bundleModule);

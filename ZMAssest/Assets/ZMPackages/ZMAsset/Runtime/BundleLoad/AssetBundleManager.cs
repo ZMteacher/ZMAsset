@@ -218,7 +218,7 @@ namespace ZM.ZMAsset
         public bool GeneratorBundleConfigPath(string bundleModule,string mBundleConfigName,ref string mBundleConfigPath)
         {
             //如果是寻址资源，默认从热更层加载
-            if (string.Equals(bundleModule,BundleModuleName.AdressAsset))
+            if (string.Equals(bundleModule,BundleModuleName.AddressAsset))
             {
                 return true;
             }
@@ -331,7 +331,7 @@ namespace ZM.ZMAsset
                 bundle= mBundleCachePool.Spawn();
                 //计算出AssetBundle加载路径
                 string hotFilePath = BundleSettings.Instance.GetHotAssetsPath(bundleModuleType)+bundleName; 
-                bool isAddressModule = string.Equals(bundleModuleType, BundleModuleName.AdressAsset);
+                bool isAddressModule = string.Equals(bundleModuleType, BundleModuleName.AddressAsset);
                 bool isHotPath = isAddressModule || BundleSettings.Instance.bundleHotType== BundleHotEnum.Hot && File.Exists(hotFilePath);
                 //通过是否是热更路径 计算出AssetBundle加载的路径
                 string bundlePath = isHotPath ? hotFilePath :  BundleSettings.Instance.GetAssetsBuiltinBundlePath(bundleModuleType) + bundleName;
@@ -464,7 +464,7 @@ namespace ZM.ZMAsset
                 bundle= mBundleCachePool.Spawn();
                 //计算出AssetBundle加载路径
                 string hotFilePath = BundleSettings.Instance.GetHotAssetsPath(bundleModuleType)+bundleName;
-                bool isAddressModule = string.Equals(bundleModuleType, BundleModuleName.AdressAsset);
+                bool isAddressModule = string.Equals(bundleModuleType, BundleModuleName.AddressAsset);
                 bool isHotPath = isAddressModule|| BundleSettings.Instance.bundleHotType== BundleHotEnum.Hot && File.Exists(hotFilePath);
                 //通过是否是热更路径 计算出AssetBundle加载的路径
                 string bundlePath = isHotPath ? hotFilePath :  BundleSettings.Instance.GetAssetsBuiltinBundlePath(bundleModuleType) + bundleName;

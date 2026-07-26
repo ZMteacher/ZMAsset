@@ -10,7 +10,6 @@
 *
 * Modify: 
 ------------------------------------------------------------------------------------------------------------------------------------------------*/
-using Sirenix.OdinInspector;
 using System.Collections;
 using System.Collections.Generic;
 using Newtonsoft.Json;
@@ -51,11 +50,6 @@ public class BundleModuleData
 [System.Serializable]
 public class BundleFileInfo
 {
-
-    [HideLabel]
     public string abName="AB Name";
-
-    [HideLabel]
-    [FolderPath]
     public string bundlePath="BundlePath...";
 }

@@ -1,164 +1,235 @@
-﻿/*---------------------------------------------------------------------------------------------------------------------------------------------
-*
-* Title: ZMAsset
-*
-* Description: 可视化多模块打包器、多模块热更、多线程下载、多版本热更、多版本回退、加密、解密、内嵌、解压、内存引用计数、大型对象池、AssetBundle加载、Editor加载
-*
-* Author: ZM
-*
-* Date: 2023.4.13
-*
-* Modify: 
-------------------------------------------------------------------------------------------------------------------------------------------------*/
-using Sirenix.OdinInspector;
-using Sirenix.OdinInspector.Editor;
-using System.Collections;
-using System.Collections.Generic;
+using UnityEditor;
 using UnityEngine;
 
-
-public class BundleModuleConfig : OdinEditorWindow
+public class BundleModuleConfig : EditorWindow
 {
-    [PropertySpace( spaceAfter:5,spaceBefore:5)]
-    [Required("请输入资源模块名称")]
-    [GUIColor(0.3f ,0.8f,0.8f,1f)]
-    [LabelText("资源模块名称:")]
-    public string moduleName;
- 
-    //[GUIColor(0.3f, 0.8f, 0.8f, 1f)]
-    [LabelText("是否可寻址资源?"),InfoBox("区别:用时下载。建议在外围模块使用该功能，因为使用时下载需要Loading进行表现...")]
-    public bool isAddressableAsset=false;
-    [ReadOnly]
-    [HideLabel]
-    [TabGroup("预制体包")]
-    [DisplayAsString]
-    public string prefabTabel = "该文件夹下的所有预制体都会单独打成一个AssetBundle";
-
-    [ReadOnly]
-    [HideLabel]
-    [TabGroup("文件夹子包")]
-    [DisplayAsString]
-    public string rootFolderSubBundle = "该文件夹下的所有子文件夹都会单独打成一个AssetBundle";
-
-    [ReadOnly]
-    [HideLabel]
-    [TabGroup("单个补丁包")]
-    [DisplayAsString]
-    public string signBundle = "指定的文件夹会单独打成一个AssetBundle";
-
-    [ReadOnly]
-    [HideLabel]
-    [TabGroup("源文件配置")]
-    [DisplayAsString]
-    public string sourceBundle = "指定的文件夹下的所有源文件会拷贝到AssetBundle文件夹";
-    
-    [FolderPath]
-    [TabGroup("预制体包")]
-    [LabelText("预制体资源路径配置")]
-    public string[] prefabPathArr = new string[] { "Path..." };
-
-
-    [FolderPath]
-    [TabGroup("文件夹子包")]
-    [LabelText("文件夹子包路径配置")]
-    public string[] rootFolderPathArr = new string[] {};
-
-     [TabGroup("单个补丁包")]
-    [LabelText("单个补丁包路径配置")]
-    public BundleFileInfo[] signFolderPathArr = new BundleFileInfo[] {};
-
-    [FolderPath]
-    [TabGroup("源文件配置")]
-    [LabelText("源文件路径配置")]
-    public string[] sourceFolderPathArr = new string[] {};
-    
-    
-    public static void ShowWindow(string moduleName)
+    private enum PathType
     {
-        BundleModuleConfig window = GetWindowWithRect<BundleModuleConfig>(new Rect(0,0,600,600));
+        Prefab,
+        RootFolder,
+        SingleBundle,
+        Source
+    }
+
+    [SerializeField] private string moduleName;
+    [SerializeField] private string originalModuleName;
+    [SerializeField] private bool isAddressableAsset;
+    [SerializeField] private string[] prefabPathArr = { "Path..." };
+    [SerializeField] private string[] rootFolderPathArr = { };
+    [SerializeField] private BundleFileInfo[] signFolderPathArr = { };
+    [SerializeField] private string[] sourceFolderPathArr = { };
+    [SerializeField] private int selectedTab;
+    [SerializeField] private Vector2 scrollPosition;
+
+    private static readonly string[] TabNames = { "预制体包", "文件夹子包", "单个补丁包", "源文件配置" };
+
+    public static void ShowWindow(string targetModuleName)
+    {
+        BundleModuleConfig window = GetWindow<BundleModuleConfig>(true, "资源模块配置", true);
+        window.minSize = new Vector2(620, 520);
+        window.Load(targetModuleName);
         window.Show();
-        //更新窗口数据 
-        BundleModuleData moduleData= BuildBundleConfigura.Instance.GetBundleDataByName(moduleName);
-        if (moduleData!=null)
-        {
-            window.isAddressableAsset = moduleData.isAddressableAsset;
-            window.moduleName = moduleData.moduleName;
-            window.prefabPathArr = moduleData.prefabPathArr;
-            window.rootFolderPathArr = moduleData.rootFolderPathArr;
-            window.signFolderPathArr = moduleData.signFolderPathArr;
-            window.sourceFolderPathArr = moduleData.sourceFolderPathArr;
-        }
     }
 
-    /// <summary>
-    /// 储存模块资源配置
-    /// </summary>
-    [OnInspectorGUI]
-    public void DrawSaveConfigaurButton()
+    private void Load(string targetModuleName)
     {
-        //绘制删除配置按钮
-        GUILayout.BeginArea(new Rect(0,510,600,200));
-        if (GUILayout.Button("DeleteConfiguration",GUILayout.Height(47)))
+        originalModuleName = targetModuleName;
+        BundleModuleData data = BuildBundleConfigura.Instance?.GetBundleDataByName(targetModuleName);
+        if (data == null)
         {
-            DeleteConfiguration();
-            GUIUtility.ExitGUI();
-        }
-        GUILayout.EndArea();
-        //绘制保存当前配置的按钮
-        GUILayout.BeginArea(new Rect(0, 555, 600, 200));
-        if (GUILayout.Button("SaveConfiguration", GUILayout.Height(47)))
-        {
-            SaveConfiguration();
-            GUIUtility.ExitGUI();
-        }
-        GUILayout.EndArea();
-    }
-    /// <summary>
-    /// 删除资源模块配置
-    /// </summary>
-    public void DeleteConfiguration()
-    {
-        BuildBundleConfigura.Instance.RemoveModuleByName(moduleName);
-        UnityEditor.EditorUtility.DisplayDialog("删除成功！","配置以删除","确定");
-        Close();
-        BuildWindows.ShowAssetBundleWindow();
-    }
-    /// <summary>
-    /// 储存资源模块配置
-    /// </summary>
-    public void SaveConfiguration()
-    {
-        if (string.IsNullOrEmpty(moduleName))
-        {
-            UnityEditor.EditorUtility.DisplayDialog("保存失败！", "模块名称不能为空", "确定");
-            return;
-        }
-
-        BundleModuleData moduleData = BuildBundleConfigura.Instance.GetBundleDataByName(moduleName);
-       
-        if (moduleData==null)
-        {
-            //添加新的模块资源
-            moduleData = new BundleModuleData();
-            moduleData.moduleName = this.moduleName;
-            moduleData.isAddressableAsset = this.isAddressableAsset;
-            moduleData.prefabPathArr = this.prefabPathArr;
-            moduleData.rootFolderPathArr = this.rootFolderPathArr;
-            moduleData.signFolderPathArr = this.signFolderPathArr;
-            moduleData.sourceFolderPathArr = this.sourceFolderPathArr;
-            BuildBundleConfigura.Instance.SaveModuleData(moduleData);
+            moduleName = string.Empty;
+            isAddressableAsset = false;
+            prefabPathArr = new[] { "Path..." };
+            rootFolderPathArr = new string[0];
+            signFolderPathArr = new BundleFileInfo[0];
+            sourceFolderPathArr = new string[0];
         }
         else
         {
-            moduleData.prefabPathArr = this.prefabPathArr;
-            moduleData.rootFolderPathArr = this.rootFolderPathArr;
-            moduleData.signFolderPathArr = this.signFolderPathArr;
-            moduleData.sourceFolderPathArr = this.sourceFolderPathArr;
-            BuildBundleConfigura.Instance.SaveModuleData(moduleData);
+            moduleName = data.moduleName;
+            isAddressableAsset = data.isAddressableAsset;
+            prefabPathArr = data.prefabPathArr ?? new string[0];
+            rootFolderPathArr = data.rootFolderPathArr ?? new string[0];
+            signFolderPathArr = data.signFolderPathArr ?? new BundleFileInfo[0];
+            sourceFolderPathArr = data.sourceFolderPathArr ?? new string[0];
         }
-      
-        UnityEditor.EditorUtility.DisplayDialog("保存成功！", "配置以储存", "确定");
+    }
+
+    private void OnGUI()
+    {
+        EditorGUILayout.Space(8);
+        moduleName = EditorGUILayout.TextField("资源模块名称", moduleName);
+        isAddressableAsset = EditorGUILayout.Toggle("是否可寻址资源", isAddressableAsset);
+        EditorGUILayout.HelpBox("可寻址资源会在使用时下载，建议在外围模块使用，并配合 Loading 表现。", MessageType.Info);
+        EditorGUILayout.Space(6);
+
+        selectedTab = GUILayout.Toolbar(selectedTab, TabNames);
+        using (var scroll = new EditorGUILayout.ScrollViewScope(scrollPosition))
+        {
+            scrollPosition = scroll.scrollPosition;
+            EditorGUILayout.Space(8);
+            switch ((PathType)selectedTab)
+            {
+                case PathType.Prefab:
+                    DrawDescription("该文件夹下的所有预制体都会单独打成一个 AssetBundle");
+                    DrawPathArray(ref prefabPathArr, "预制体资源路径");
+                    break;
+                case PathType.RootFolder:
+                    DrawDescription("该文件夹下的所有子文件夹都会单独打成一个 AssetBundle");
+                    DrawPathArray(ref rootFolderPathArr, "文件夹子包路径");
+                    break;
+                case PathType.SingleBundle:
+                    DrawDescription("指定的文件夹会单独打成一个 AssetBundle");
+                    DrawBundleFileArray();
+                    break;
+                case PathType.Source:
+                    DrawDescription("指定文件夹下的所有源文件会复制到 AssetBundle 文件夹");
+                    DrawPathArray(ref sourceFolderPathArr, "源文件路径");
+                    break;
+            }
+        }
+
+        GUILayout.FlexibleSpace();
+        DrawFooter();
+    }
+
+    private static void DrawDescription(string text)
+    {
+        EditorGUILayout.HelpBox(text, MessageType.None);
+    }
+
+    private static void DrawPathArray(ref string[] paths, string label)
+    {
+        paths ??= new string[0];
+        GUILayout.Label(label, EditorStyles.boldLabel);
+        for (int i = 0; i < paths.Length; i++)
+        {
+            using (new EditorGUILayout.HorizontalScope())
+            {
+                paths[i] = EditorGUILayout.TextField(paths[i]);
+                if (GUILayout.Button("选择", GUILayout.Width(48)))
+                {
+                    string selected = EditorUtility.OpenFolderPanel(label, ToAbsoluteFolder(paths[i]), string.Empty);
+                    if (!string.IsNullOrEmpty(selected))
+                        paths[i] = ToProjectPath(selected);
+                }
+                if (GUILayout.Button("−", GUILayout.Width(28)))
+                {
+                    ArrayUtility.RemoveAt(ref paths, i);
+                    GUIUtility.ExitGUI();
+                }
+            }
+        }
+        if (GUILayout.Button("+ 添加路径", GUILayout.Height(26)))
+            ArrayUtility.Add(ref paths, string.Empty);
+    }
+
+    private void DrawBundleFileArray()
+    {
+        signFolderPathArr ??= new BundleFileInfo[0];
+        GUILayout.Label("单个补丁包路径", EditorStyles.boldLabel);
+        for (int i = 0; i < signFolderPathArr.Length; i++)
+        {
+            signFolderPathArr[i] ??= new BundleFileInfo();
+            using (new EditorGUILayout.VerticalScope(EditorStyles.helpBox))
+            {
+                using (new EditorGUILayout.HorizontalScope())
+                {
+                    signFolderPathArr[i].abName = EditorGUILayout.TextField("Bundle 名称", signFolderPathArr[i].abName);
+                    if (GUILayout.Button("删除", GUILayout.Width(48)))
+                    {
+                        ArrayUtility.RemoveAt(ref signFolderPathArr, i);
+                        GUIUtility.ExitGUI();
+                    }
+                }
+                using (new EditorGUILayout.HorizontalScope())
+                {
+                    signFolderPathArr[i].bundlePath = EditorGUILayout.TextField("文件夹路径", signFolderPathArr[i].bundlePath);
+                    if (GUILayout.Button("选择", GUILayout.Width(48)))
+                    {
+                        string selected = EditorUtility.OpenFolderPanel("选择 Bundle 文件夹", ToAbsoluteFolder(signFolderPathArr[i].bundlePath), string.Empty);
+                        if (!string.IsNullOrEmpty(selected))
+                            signFolderPathArr[i].bundlePath = ToProjectPath(selected);
+                    }
+                }
+            }
+        }
+        if (GUILayout.Button("+ 添加补丁包", GUILayout.Height(26)))
+            ArrayUtility.Add(ref signFolderPathArr, new BundleFileInfo());
+    }
+
+    private void DrawFooter()
+    {
+        EditorGUILayout.Space(6);
+        using (new EditorGUILayout.HorizontalScope())
+        {
+            using (new EditorGUI.DisabledScope(string.IsNullOrEmpty(originalModuleName)))
+            {
+                if (GUILayout.Button("删除配置", GUILayout.Height(38)))
+                    DeleteConfiguration();
+            }
+            if (GUILayout.Button("保存配置", GUILayout.Height(38)))
+                SaveConfiguration();
+        }
+        EditorGUILayout.Space(6);
+    }
+
+    private void DeleteConfiguration()
+    {
+        if (!EditorUtility.DisplayDialog("删除配置", $"确定删除模块“{originalModuleName}”吗？", "删除", "取消"))
+            return;
+        BuildBundleConfigura.Instance.RemoveModuleByName(originalModuleName);
+        CloseAndRefresh();
+    }
+
+    private void SaveConfiguration()
+    {
+        moduleName = moduleName?.Trim();
+        if (string.IsNullOrEmpty(moduleName))
+        {
+            EditorUtility.DisplayDialog("保存失败", "模块名称不能为空。", "确定");
+            return;
+        }
+
+        BundleModuleData duplicate = BuildBundleConfigura.Instance.GetBundleDataByName(moduleName);
+        if (duplicate != null && moduleName != originalModuleName)
+        {
+            EditorUtility.DisplayDialog("保存失败", "已存在同名模块。", "确定");
+            return;
+        }
+
+        BundleModuleData data = BuildBundleConfigura.Instance.GetBundleDataByName(originalModuleName) ?? new BundleModuleData();
+        data.moduleName = moduleName;
+        data.isAddressableAsset = isAddressableAsset;
+        data.prefabPathArr = prefabPathArr;
+        data.rootFolderPathArr = rootFolderPathArr;
+        data.signFolderPathArr = signFolderPathArr;
+        data.sourceFolderPathArr = sourceFolderPathArr;
+        BuildBundleConfigura.Instance.SaveModuleData(data);
+        CloseAndRefresh();
+    }
+
+    private void CloseAndRefresh()
+    {
         Close();
         BuildWindows.ShowAssetBundleWindow();
+    }
+
+    private static string ToAbsoluteFolder(string path)
+    {
+        if (string.IsNullOrEmpty(path))
+            return Application.dataPath;
+        if (path == "Assets")
+            return Application.dataPath;
+        if (path.StartsWith("Assets/"))
+            return Application.dataPath + path.Substring("Assets".Length);
+        return path;
+    }
+
+    private static string ToProjectPath(string absolutePath)
+    {
+        absolutePath = absolutePath.Replace('\\', '/');
+        string dataPath = Application.dataPath.Replace('\\', '/');
+        return absolutePath.StartsWith(dataPath) ? "Assets" + absolutePath.Substring(dataPath.Length) : absolutePath;
     }
 }
