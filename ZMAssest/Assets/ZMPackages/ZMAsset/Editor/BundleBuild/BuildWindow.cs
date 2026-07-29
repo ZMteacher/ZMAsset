@@ -266,8 +266,9 @@ public partial class BuildWindows : EditorWindow
         EditorGUI.DrawRect(rect, ZMBuildStyles.Header);
         EditorGUI.DrawRect(new Rect(rect.x, rect.yMax - 1, rect.width, 1), ZMBuildStyles.Border);
 
-        Texture cube = EditorGUIUtility.IconContent("Prefab Icon").image;
-        if (cube != null) GUI.DrawTexture(new Rect(22, 20, 27, 27), cube, ScaleMode.ScaleToFit);
+        Texture unityLogo = EditorGUIUtility.IconContent("UnityLogo").image;
+        if (unityLogo != null)
+            GUI.DrawTexture(new Rect(18, 16, 35, 35), unityLogo, ScaleMode.ScaleToFit, true);
         GUI.Label(new Rect(58, 17, 320, 34), "ZMAsset 构建中心", ZMBuildStyles.Title);
 
         if (currentPage == Page.AssetBundle || currentPage == Page.HotPatch)
