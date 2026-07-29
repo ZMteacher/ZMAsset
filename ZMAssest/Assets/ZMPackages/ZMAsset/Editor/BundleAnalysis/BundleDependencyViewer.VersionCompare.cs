@@ -37,25 +37,11 @@ namespace ZM.Editor
             EditorGUILayout.Space(4);
 
             // ── 路径选择 ──
-            EditorGUILayout.BeginHorizontal();
-            EditorGUILayout.LabelField("旧版本目录", GUILayout.Width(70));
-            _t1OldPath = EditorGUILayout.TextField(_t1OldPath);
-            if (GUILayout.Button("浏览", GUILayout.Width(46)))
-            {
-                string p = EditorUtility.OpenFolderPanel("选择旧版本 AB 目录", _t1OldPath, "");
-                if (!string.IsNullOrEmpty(p)) _t1OldPath = p;
-            }
-            EditorGUILayout.EndHorizontal();
-
-            EditorGUILayout.BeginHorizontal();
-            EditorGUILayout.LabelField("新版本目录", GUILayout.Width(70));
-            _t1NewPath = EditorGUILayout.TextField(_t1NewPath);
-            if (GUILayout.Button("浏览", GUILayout.Width(46)))
-            {
-                string p = EditorUtility.OpenFolderPanel("选择新版本 AB 目录", _t1NewPath, "");
-                if (!string.IsNullOrEmpty(p)) _t1NewPath = p;
-            }
-            EditorGUILayout.EndHorizontal();
+            _t1OldPath = DrawVersionDirectoryField(
+                "旧版本目录", _t1OldPath, "选择旧版本 AB 目录");
+            EditorGUILayout.Space(6);
+            _t1NewPath = DrawVersionDirectoryField(
+                "新版本目录", _t1NewPath, "选择新版本 AB 目录");
 
             EditorGUILayout.Space(10);
             // ── 操作行1：对比按钮 ──
@@ -193,6 +179,33 @@ namespace ZM.Editor
             _t1ShowChart = EditorGUILayout.Foldout(_t1ShowChart, "📊 大小对比图（按顶层目录分组）", true);
             if (_t1ShowChart)
                 DrawVersionCompareChart();
+        }
+
+        private static string DrawVersionDirectoryField(
+            string label, string path, string dialogTitle)
+        {
+            Rect row = EditorGUILayout.GetControlRect(false, 34f);
+            const float labelWidth = 78f;
+            const float buttonWidth = 58f;
+            const float gap = 8f;
+            Rect labelRect = new Rect(row.x, row.y, labelWidth, row.height);
+            Rect buttonRect = new Rect(
+                row.xMax - buttonWidth, row.y, buttonWidth, row.height);
+            Rect fieldRect = new Rect(
+                labelRect.xMax, row.y, buttonRect.x - gap - labelRect.xMax, row.height);
+
+            GUI.Label(labelRect, label, ZMBuildStyles.SettingsLabel);
+            path = ZMBuildStyles.DrawTextField(
+                fieldRect, path ?? string.Empty, ZMBuildStyles.InputField);
+            if (GUI.Button(buttonRect, "浏览", ZMBuildStyles.CompactSecondaryButton))
+            {
+                string selected = EditorUtility.OpenFolderPanel(
+                    dialogTitle, path, string.Empty);
+                if (!string.IsNullOrEmpty(selected))
+                    path = selected;
+            }
+
+            return path;
         }
 
         private void RunVersionCompare()

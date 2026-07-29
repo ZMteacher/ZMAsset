@@ -700,6 +700,31 @@ namespace ZM.Editor
             return clicked;
         }
 
+        private static bool DrawAnalyzerToggle(Rect rect, GUIContent content, bool value)
+        {
+            const float trackWidth = 46f;
+            const float trackHeight = 24f;
+            const float knobSize = 16f;
+            Rect track = new Rect(
+                rect.x, Mathf.Round(rect.center.y - trackHeight * .5f),
+                trackWidth, trackHeight);
+            GUI.Box(track, GUIContent.none,
+                value ? ZMBuildStyles.SwitchOn : ZMBuildStyles.SwitchOff);
+            Rect knob = new Rect(
+                value ? track.xMax - knobSize - 4f : track.x + 4f,
+                track.y + 4f, knobSize, knobSize);
+            GUI.Box(knob, GUIContent.none, ZMBuildStyles.SwitchKnob);
+
+            Rect label = new Rect(
+                track.xMax + 8f, rect.y,
+                Mathf.Max(0f, rect.xMax - track.xMax - 8f), rect.height);
+            GUI.Label(label, content, ZMBuildStyles.SettingsLabel);
+            if (GUI.Button(rect, GUIContent.none, GUIStyle.none))
+                value = !value;
+            EditorGUIUtility.AddCursorRect(rect, MouseCursor.Link);
+            return value;
+        }
+
         private static bool DrawHeaderTextButton(Rect rect, string text, BundleAnalyzerIcons.Icon icon, bool selected = false)
         {
             GUIStyle style = selected ? ZMBuildStyles.SegmentSelected : ZMBuildStyles.BadgeBox;

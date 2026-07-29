@@ -37,11 +37,18 @@ namespace ZM.Editor
 
             using (new EditorGUILayout.HorizontalScope(ZMBuildStyles.SettingsCard))
             {
-                _t3DeepScan = EditorGUILayout.ToggleLeft(
+                Rect deepScanToggle = GUILayoutUtility.GetRect(
+                    108, 34, GUILayout.Width(108), GUILayout.Height(34));
+                _t3DeepScan = DrawAnalyzerToggle(
+                    deepScanToggle,
                     new GUIContent("深度扫描", "加载每个 Bundle 并检查资源路径，耗时较长。"),
-                    _t3DeepScan, GUILayout.Width(90));
+                    _t3DeepScan);
+                GUIStyle scanModeLabel = new GUIStyle(BundleAnalyzerStyles.PageSubtitle)
+                {
+                    alignment = TextAnchor.MiddleLeft
+                };
                 GUILayout.Label(_t3DeepScan ? "包含直接嵌入资源检查" : "仅检查 Manifest 依赖",
-                    BundleAnalyzerStyles.PageSubtitle, GUILayout.MaxWidth(220));
+                    scanModeLabel, GUILayout.Width(220), GUILayout.Height(34));
                 GUILayout.FlexibleSpace();
                 if (!_t3Dirty && _t3Summary.Count > 0 &&
                     GUILayout.Button($"导出 {ExportFormats[_exportFmtIdx]}", ZMBuildStyles.CompactSecondaryButton,

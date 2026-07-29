@@ -280,22 +280,25 @@ namespace ZM.Editor
                 string.IsNullOrEmpty(size) ? "大小未知" : $"资源大小  {size}", ZMBuildStyles.SettingsHint);
             GUIStyle locateStyle = new GUIStyle(ZMBuildStyles.CompactSecondaryButton)
             {
+                fixedHeight = 24,
+                stretchHeight = false,
                 fontSize = 11,
+                padding = new RectOffset(0, 0, 0, 0),
                 normal = { textColor = new Color32(220, 226, 234, 255) }
             };
-            if (GUI.Button(new Rect(row.xMax - 62, row.y + 47, 52, 24), "定位", locateStyle))
+            if (GUI.Button(new Rect(row.xMax - 74, row.y + 46, 64, 24), "定位", locateStyle))
                 PingAsset(assetPath);
             EditorGUIUtility.AddCursorRect(pathRect, MouseCursor.Text);
         }
 
-        private static void DrawBundleDependencyRow(string dependency)
+        private void DrawBundleDependencyRow(string dependency)
         {
             Rect row = GUILayoutUtility.GetRect(0, 40, GUILayout.ExpandWidth(true));
             GUI.Box(row, GUIContent.none, BundleAnalyzerStyles.ListRow);
             Rect iconRect = new Rect(row.x + 10, row.y + 10, 20, 20);
             BundleAnalyzerIcons.Draw(iconRect, BundleAnalyzerIcons.Icon.Dependency,
                 new Color32(126, 164, 202, 255), 1.5f);
-            GUI.Label(new Rect(row.x + 40, row.y, row.width - 50, row.height),
+            GUI.Label(new Rect(row.x + 40, row.y, row.width - 112, row.height),
                 new GUIContent(dependency, dependency),
                 new GUIStyle(BundleAnalyzerStyles.TableCell)
                 {
@@ -303,6 +306,19 @@ namespace ZM.Editor
                     clipping = TextClipping.Clip,
                     normal = { textColor = new Color32(218, 225, 234, 255) }
                 });
+            GUIStyle copyStyle = new GUIStyle(ZMBuildStyles.CompactSecondaryButton)
+            {
+                fixedHeight = 24,
+                stretchHeight = false,
+                fontSize = 11,
+                padding = new RectOffset(0, 0, 0, 0)
+            };
+            if (GUI.Button(new Rect(row.xMax - 62, row.y + 8, 52, 24),
+                    new GUIContent("复制", "复制完整 Bundle 名称"), copyStyle))
+            {
+                EditorGUIUtility.systemCopyBuffer = dependency;
+                ShowNotification(new GUIContent("已复制 Bundle 名称"));
+            }
             GUILayout.Space(5);
         }
 

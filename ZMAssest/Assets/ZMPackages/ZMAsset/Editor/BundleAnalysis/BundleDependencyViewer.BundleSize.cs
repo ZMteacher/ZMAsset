@@ -14,6 +14,10 @@ namespace ZM.Editor
     /// </summary>
     public partial class BundleDependencyViewer
     {
+        private const float BundleSizeMetricsLeftOffset = 32f;
+        private const float BundleSizeHeaderAlignmentOffset = 17f;
+        private const float BundleSizeRiskColumnRightOffset = 5f;
+
         private struct BundleSizeEntry
         {
             public string GameName;
@@ -45,10 +49,14 @@ namespace ZM.Editor
             }
 
             EditorGUILayout.BeginHorizontal();
-            bool newShowAll = EditorGUILayout.ToggleLeft("查看全部游戏", _t4ShowAll, GUILayout.Width(120));
+            Rect showAllToggle = GUILayoutUtility.GetRect(
+                150, 34, GUILayout.Width(150), GUILayout.Height(34));
+            bool newShowAll = DrawAnalyzerToggle(
+                showAllToggle, new GUIContent("查看全部游戏"), _t4ShowAll);
             if (newShowAll != _t4ShowAll) { _t4ShowAll = newShowAll; }
             if (!_t4ShowAll)
             {
+                GUILayout.Space(8);
                 int newGame = DrawAnalyzerPopup("size.game", _t4GameIdx, _gameNames, GUILayout.MinWidth(160));
                 if (newGame != _t4GameIdx) { _t4GameIdx = newGame; }
             }
@@ -125,9 +133,13 @@ namespace ZM.Editor
                     GUILayout.Label("占比", new GUIStyle(BundleAnalyzerStyles.TableHeaderLabel)
                         { alignment = TextAnchor.MiddleCenter },
                         GUILayout.Width(58), GUILayout.Height(36));
+                    GUILayout.Space(BundleSizeRiskColumnRightOffset);
                     GUILayout.Label("风险状态", new GUIStyle(BundleAnalyzerStyles.TableHeaderLabel)
                         { alignment = TextAnchor.MiddleCenter },
                         GUILayout.Width(112), GUILayout.Height(36));
+                    GUILayout.Space(BundleSizeMetricsLeftOffset +
+                                    BundleSizeHeaderAlignmentOffset -
+                                    BundleSizeRiskColumnRightOffset);
                     GUILayout.Label(string.Empty, GUILayout.Width(72));
                 }
                 GUILayout.Space(6);
@@ -164,6 +176,7 @@ namespace ZM.Editor
                         GUILayout.Label($"{pct:F1}%", new GUIStyle(BundleAnalyzerStyles.TableCell)
                             { alignment = TextAnchor.MiddleCenter },
                             GUILayout.Width(58), GUILayout.Height(54));
+                        GUILayout.Space(BundleSizeRiskColumnRightOffset);
                         string marker = entry.HasCrossDep && entry.HasEmbeddedAsset ? "双重风险"
                             : entry.HasCrossDep ? "依赖风险"
                             : entry.HasEmbeddedAsset ? "嵌入资源" : "正常";
@@ -175,6 +188,8 @@ namespace ZM.Editor
                                 : new Color32(82, 198, 143, 255) }
                         }, GUILayout.Width(112), GUILayout.Height(54));
 
+                        GUILayout.Space(BundleSizeMetricsLeftOffset -
+                                        BundleSizeRiskColumnRightOffset);
                         int gameIdx = Array.IndexOf(_gameNames, entry.GameName);
                         using (new EditorGUILayout.VerticalScope(GUILayout.Width(72), GUILayout.Height(54)))
                         {

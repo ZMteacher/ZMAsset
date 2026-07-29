@@ -14,6 +14,26 @@ namespace ZM.Editor
     /// </summary>
     public partial class BundleDependencyViewer
     {
+        private GUIStyle _crossGameActionButton;
+
+        private GUIStyle CrossGameActionButton
+        {
+            get
+            {
+                if (_crossGameActionButton != null)
+                    return _crossGameActionButton;
+
+                _crossGameActionButton = new GUIStyle(ZMBuildStyles.CardEditButton)
+                {
+                    fixedHeight = 0,
+                    stretchHeight = false,
+                    alignment = TextAnchor.MiddleCenter,
+                    padding = new RectOffset(0, 0, 0, 0)
+                };
+                return _crossGameActionButton;
+            }
+        }
+
         private struct CrossResult
         {
             public string SourceBundle;
@@ -58,10 +78,14 @@ namespace ZM.Editor
             }
 
             EditorGUILayout.Space(4);
-            _t2DeepScan = EditorGUILayout.Toggle(
+            Rect deepScanToggle = GUILayoutUtility.GetRect(
+                310, 28, GUILayout.ExpandWidth(true), GUILayout.Height(28));
+            _t2DeepScan = DrawAnalyzerToggle(
+                deepScanToggle,
                 new GUIContent("深度扫描（加载 Bundle 内资源路径）",
                     "除 Manifest 依赖外，还会加载每个 .uab 文件，检查其包含的资源路径中是否含有其他游戏名。\n可检测到「资源被直接打入」的冗余情况，耗时较长。"),
                 _t2DeepScan);
+            EditorGUILayout.Space(8);
             bool hasDetectionResult = !_t2Dirty;
             if (GUILayout.Button(hasDetectionResult ? "重新检测" : "开始检测",
                     hasDetectionResult ? ZMBuildStyles.CompactSecondaryButton : ZMBuildStyles.CompactPrimaryButton,
@@ -118,7 +142,7 @@ namespace ZM.Editor
                     using (new EditorGUILayout.VerticalScope(GUILayout.Width(92), GUILayout.Height(44)))
                     {
                         GUILayout.Space(8);
-                        if (GUILayout.Button("查看 Bundle", ZMBuildStyles.CardEditButton,
+                        if (GUILayout.Button("查看 Bundle", CrossGameActionButton,
                                 GUILayout.Width(92), GUILayout.Height(28)))
                             JumpToTab5(_t2SrcIdx, r.SourceBundle);
                     }
@@ -176,7 +200,7 @@ namespace ZM.Editor
                     using (new EditorGUILayout.VerticalScope(GUILayout.Width(92), GUILayout.Height(44)))
                     {
                         GUILayout.Space(8);
-                        if (GUILayout.Button("查看 Bundle", ZMBuildStyles.CardEditButton,
+                        if (GUILayout.Button("查看 Bundle", CrossGameActionButton,
                                 GUILayout.Width(92), GUILayout.Height(28)))
                             JumpToTab5(_t2SrcIdx, r.SourceBundle);
                     }
@@ -193,7 +217,7 @@ namespace ZM.Editor
                         using (new EditorGUILayout.VerticalScope(GUILayout.Width(58), GUILayout.Height(38)))
                         {
                             GUILayout.Space(6);
-                            if (GUILayout.Button("定位", ZMBuildStyles.CardEditButton,
+                            if (GUILayout.Button("定位", CrossGameActionButton,
                                     GUILayout.Width(58), GUILayout.Height(26)))
                                 PingAsset(assetPath);
                         }
