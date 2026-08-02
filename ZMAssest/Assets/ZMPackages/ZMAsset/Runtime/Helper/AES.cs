@@ -33,10 +33,10 @@ namespace ZM.ZMAsset
 	    /// </summary>
 	    /// <param name="path"></param>
 	    /// <param name="EncrptyKey"></param>
-	    public static void AESFileEncrypt(string path, string EncrptyKey)
+	    public static bool AESFileEncrypt(string path, string EncrptyKey)
 	    {
 	        if (!File.Exists(path))
-	            return;
+	            return false;
 	
 	        try
 	        {
@@ -53,7 +53,7 @@ namespace ZM.ZMAsset
 #if UNITY_EDITOR
 	                        Debug.Log(path + "已经加密过了！");
 #endif
-	                        return;
+	                        return true;
 	                    }
 						//Debug.Log("加密文件:"+path);
 	                    //加密并且写入字节头
@@ -68,10 +68,13 @@ namespace ZM.ZMAsset
 	                    fs.Write(EncBuffer, 0, EncBuffer.Length);
 	                }
 	            }
+	            return true;
 	        }
 	        catch (Exception e)
 	        {
 	            Debug.LogError(e);
+	            // 构建器通过返回值感知失败，禁止加密异常被日志吞掉后继续发布。
+	            return false;
 	        }
 	    }
 	

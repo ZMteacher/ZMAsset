@@ -26,7 +26,14 @@ namespace ZM.ZMAsset
         /// <param name="hotFinish">热更完成回调</param>
         /// <param name="waiteDownLoad">等待下载的回调</param>
         /// <param name="isCheckAssetsVersion">是否需要检测资源版本</param>
-        void HotAssets(string bundleModule,Action<string> startHotCallBack, Action<string> hotFinish, Action<string> waiteDownLoad,bool isCheckAssetsVersion=true);
+        /// <param name="hotFailed">热更失败回调，包含失败模块和首个失败文件</param>
+        void HotAssets(
+            string bundleModule,
+            Action<string> startHotCallBack,
+            Action<string> hotFinish,
+            Action<string> waiteDownLoad,
+            bool isCheckAssetsVersion = true,
+            Action<string, HotFileInfo> hotFailed = null);
         /// <summary>
         /// 检测资源版本是否需要热更，获取需要热更资源的大小
         /// </summary>

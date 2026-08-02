@@ -15,6 +15,7 @@ using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using Cysharp.Threading.Tasks;
 using UnityEditor;
 using UnityEngine;
@@ -335,7 +336,8 @@ namespace ZM.ZMAsset
                     Debug.Log("AssetBundle Build Successs!:"+ manifest);
                     BuildSourceAssetBundle();
                     DeleteAllBundleManifestFile();
-                    EncryptHotScriptBundle();
+                    // Manifest 必须基于最终加密文件计算，所有配置中的 Bundle 在此统一加密。
+                    EncryptAllBundle();
                     if (mBuildType== BuildType.HotPatch)
                     {
                         ZMBuildProgress.Report("生成热更输出", "复制补丁文件并生成清单", .90f);
@@ -569,37 +571,34 @@ namespace ZM.ZMAsset
         /// </summary>
         public static void EncryptAllBundle()
         {
-            if (BundleSettings.Instance.bundleEncrypt.isEncrypt)
-            {
-                DirectoryInfo directoryInfo = new DirectoryInfo(mBundleOutPutPath);
-                FileInfo[] fileInfoArr = directoryInfo.GetFiles("*", SearchOption.AllDirectories);
-                for (int i = 0; i < fileInfoArr.Length; i++)
-                {
-                    ZMBuildProgress.Report("加密文件", fileInfoArr[i].Name, .82f + .08f * i / Mathf.Max(1, fileInfoArr.Length));
-                    AES.AESFileEncrypt(fileInfoArr[i].FullName, BundleSettings.Instance.bundleEncrypt.encryptKey);
-                }
-                Debug.Log("AssetBundle Encrypt Finish!");
-            }
-        }
-        /// <summary>
-        /// 加密所有的AssetBundle
-        /// </summary>
-        public static void EncryptHotScriptBundle()
-        {
-             
+            BundleSettings settings = BundleSettings.Instance;
+            if (settings == null || settings.bundleEncrypt == null || !settings.bundleEncrypt.isEncrypt)
+                return;
+            if (string.IsNullOrWhiteSpace(settings.bundleEncrypt.encryptKey))
+                throw new InvalidOperationException("已启用 AssetBundle 加密，但加密密钥为空。");
+
+            // 只加密构建列表中的 AssetBundle，源文件和其他构建产物保持原始格式。
+            HashSet<string> bundleFileNames = new HashSet<string>(
+                mBundleBuildList.Select(bundle => bundle.assetBundleName),
+                StringComparer.OrdinalIgnoreCase);
             DirectoryInfo directoryInfo = new DirectoryInfo(mBundleOutPutPath);
-            FileInfo[] fileInfoArr = directoryInfo.GetFiles("*", SearchOption.AllDirectories);
+            FileInfo[] fileInfoArr = directoryInfo
+                .GetFiles("*", SearchOption.TopDirectoryOnly)
+                .Where(file => bundleFileNames.Contains(file.Name))
+                .ToArray();
+
             for (int i = 0; i < fileInfoArr.Length; i++)
             {
-                if (fileInfoArr[i].Name.Contains("hotscript"))
-                {
-                    ZMBuildProgress.Report("加密热更脚本", fileInfoArr[i].Name, .84f + .04f * i / Mathf.Max(1, fileInfoArr.Length));
-                    AES.AESFileEncrypt(fileInfoArr[i].FullName, BundleSettings.Instance.bundleEncrypt.encryptKey);
-                    Debug.Log($"AssetBundle Encrypt Finish name:{fileInfoArr[i].Name} {BundleSettings.Instance.bundleEncrypt.encryptKey}");
-                }
+                ZMBuildProgress.Report(
+                    "加密文件",
+                    fileInfoArr[i].Name,
+                    .82f + .08f * i / Mathf.Max(1, fileInfoArr.Length));
+                if (!AES.AESFileEncrypt(fileInfoArr[i].FullName, settings.bundleEncrypt.encryptKey))
+                    throw new InvalidOperationException($"AssetBundle 加密失败：{fileInfoArr[i].FullName}");
             }
-            Debug.Log("AssetBundle Encrypt Finish!");
+            Debug.Log($"AssetBundle Encrypt Finish! Count:{fileInfoArr.Length}");
         }
+
         /// <summary>
         /// 拷贝AssetBundle至StramingAssets文件夹
         /// </summary>

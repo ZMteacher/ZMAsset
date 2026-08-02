@@ -182,133 +182,115 @@ namespace ZM.ZMAsset
         }
 
          
-        private static readonly ConcurrentDictionary<string, Task<bool>> _downloadTasks = new();
+        // Lazy 保证只有成功登记到字典中的任务才会真正发起网络请求。
+        private static readonly ConcurrentDictionary<string, Lazy<Task<bool>>> _downloadTasks = new();
         
         public async Task<bool> StartDownLoadAsync()
         {
-            return await GetOrCreateDownloadTask(mDownLoadUrl);
+            // URL、落盘路径和期望摘要完全一致时才共享任务，避免版本切换时复用旧校验结果。
+            string downloadTaskKey =
+                $"{mDownLoadUrl}|{Path.GetFullPath(mFileSavePath)}|{mHotFileInfo.md5}";
+            return await GetOrCreateDownloadTask(downloadTaskKey);
         }
 
-        private async Task<bool> GetOrCreateDownloadTask(string url)
+        private async Task<bool> GetOrCreateDownloadTask(string taskKey)
         {
-            // 尝试获取已存在的下载任务
-            if (_downloadTasks.TryGetValue(url, out var existingTask))
-            {
-                return await existingTask;
-            }
-
-            // 创建新的下载任务
-            var downloadTask = InternalStartDownLoadAsync();
-
-            // 尝试添加到字典，如果已被其他线程添加则用已有的
-            if (!_downloadTasks.TryAdd(url, downloadTask))
-            {
-                // TryAdd失败说明另一个线程已添加，重新TryGetValue防止KeyNotFoundException
-                if (_downloadTasks.TryGetValue(url, out var concurrentTask))
-                    return await concurrentTask;
-                // 极端情况：该任务已完成并被移除，直接执行本次任务
-                return await downloadTask;
-            }
+            Lazy<Task<bool>> candidate = new Lazy<Task<bool>>(
+                InternalStartDownLoadAsync,
+                LazyThreadSafetyMode.ExecutionAndPublication);
+            Lazy<Task<bool>> sharedTask = _downloadTasks.GetOrAdd(taskKey, candidate);
+            bool ownsTaskEntry = ReferenceEquals(candidate, sharedTask);
 
             try
             {
-                return await downloadTask;
+                return await sharedTask.Value;
             }
             finally
             {
-                _downloadTasks.TryRemove(url, out _);
+                // 只有登记字典成功的所有者负责移除，旧等待者不会误删同键的新下载任务。
+                if (ownsTaskEntry)
+                    _downloadTasks.TryRemove(taskKey, out _);
             }
         }
 
-        // 原有的下载实现逻辑，重命名为 InternalStartDownLoadAsync
+        /// <summary>
+        /// 执行带重试的异步下载。
+        /// </summary>
         private async Task<bool> InternalStartDownLoadAsync()
         {
- 
-
-             try
+            // 重试必须在当前任务内部循环，不能再次进入任务去重入口，否则会等待当前任务自身并永久挂起。
+            while (curDownLoadCount < MAX_TRY_DOWNLOAD_COUNT)
             {
                 curDownLoadCount++;
-                //文件是否完整
-                bool fileIsComplete = false;
-
-                UnityWebRequest webrequest = UnityWebRequest.Get(mDownLoadUrl);
-                webrequest.timeout = 60;
-                await webrequest.SendWebRequest();
-               
-                if (webrequest.result == UnityWebRequest.Result.Success)
+                try
                 {
-                    byte[] buffer = webrequest.downloadHandler.data;
+                    bool fileIsComplete = false;
+                    byte[] buffer = null;
+                    using (UnityWebRequest webRequest = UnityWebRequest.Get(mDownLoadUrl))
+                    {
+                        webRequest.timeout = 60;
+                        await webRequest.SendWebRequest();
+
+                        if (webRequest.result == UnityWebRequest.Result.Success)
+                        {
+                            buffer = webRequest.downloadHandler.data;
+                        }
+                        else
+                        {
+                            Debug.LogError("FixDownLoad File DownLoad exception webrequest.result:" + webRequest.result);
+                        }
+                    }
+
                     if (buffer != null && buffer.Length > 0)
                     {
                         await _fileSemaphore.WaitAsync();
                         try
                         {
-                            //异步写入本地文件
-                            await System.IO.File.WriteAllBytesAsync(mFileSavePath, buffer);
-                        }
-                        catch (Exception e)
-                        {
-                            Debug.Log("FixDownLoad File Write Local Exception Url:" + mDownLoadUrl + " Exception:" + e);
+                            // 文件写入完成后再做完整性校验，写入异常必须进入下一次重试。
+                            await File.WriteAllBytesAsync(mFileSavePath, buffer);
                         }
                         finally
                         {
                             _fileSemaphore.Release();
                         }
-                       
-                        //验证下载下来的文件是否完整，可能会被运营商或第三方拦截篡改
+
+                        // 验证下载文件是否完整，校验通过后本次下载才算成功。
                         fileIsComplete = MD5.GetMd5FromFile(mFileSavePath) == mHotFileInfo.md5;
                         mDownLoadSizeKB = buffer.Length;
                         if (!fileIsComplete)
                         {
                             Debug.LogError("FixDownLoad 文件下载完成，但文件已损坏");
                         }
-
                     }
                     else
                     {
                         Debug.LogError("FixDownLoad File DownLoad exception mDownLoadSizeKB ==0");
                         mDownLoadSizeKB = 0;
                     }
-                }
-                else
-                {
-                    Debug.LogError("FixDownLoad File DownLoad exception webrequest.result:" + webrequest.result);
-                    mDownLoadSizeKB = 0;
-                }
 
-                webrequest.Dispose();
-                //文件下载异常 或 下载完成的文件因网络问题或其他问题发生损坏
-                if (mDownLoadSizeKB == 0 || !fileIsComplete)
-                {
+                    if (mDownLoadSizeKB > 0 && fileIsComplete)
+                    {
+                        Debug.Log("FixDownLoad OnDownLoadSuccess ModuleEnum:" + _mCurBundleModuleName + " AssetBundleUrl:" +
+                                  mDownLoadUrl + " FileSavePath:" + mFileSavePath);
+                        return true;
+                    }
+
                     Debug.LogError("FixDownLoad File DownLoad exception plase check file fileName:" +
                                    mHotFileInfo.abName + " fileUrl:" + mDownLoadUrl);
-                    if (curDownLoadCount >= MAX_TRY_DOWNLOAD_COUNT)
-                    {
-                        Debug.LogError("FixDownLoad 文件已达最大重试次数，下载失败，下载次数：" + curDownLoadCount);
-                        return false;
-                    }
-					return await StartDownLoadAsync();
-     
+                }
+                catch (Exception e)
+                {
+                    Debug.LogError("FixDownLoad DownLoad AssetBundle Error Url:" + mDownLoadUrl + " Exception:" + e);
                 }
 
-                Debug.Log("FixDownLoad OnDownLoadSuccess ModuleEnum:" + _mCurBundleModuleName + " AssetBundleUrl:" +
-                          mDownLoadUrl + " FileSavePath:" + mFileSavePath);
-                return true;
-            }
-            catch (Exception e)
-            {
-                Debug.LogError("FixDownLoad DownLoad AssetBundle Error Url:" + mDownLoadUrl + " Exception:" + e);
-                if (curDownLoadCount >= MAX_TRY_DOWNLOAD_COUNT)
-                {
-                    return false;
-                }
-                else
+                if (curDownLoadCount < MAX_TRY_DOWNLOAD_COUNT)
                 {
                     Debug.LogError("FixDownLoad 文件下载失败，正在进行重新下载，下载次数" + curDownLoadCount);
-                    return await StartDownLoadAsync();
                 }
             }
-             
+
+            Debug.LogError("FixDownLoad 文件已达最大重试次数，下载失败，下载次数：" + curDownLoadCount);
+            return false;
         }
     }
 }

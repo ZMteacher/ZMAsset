@@ -69,12 +69,12 @@ namespace ZM.ZMAsset
         {
             if (obj != null)
                 ZMAsset.Release(obj);
-            ZMAsset.Release(this);
+            // 必须先清空请求数据再归还对象池，避免池对象被重新取出后又被旧调用栈篡改。
+            obj = null;
             param1 = null;
             param2 = null;
             param3 = null;
-            obj = null;
-          
+            ZMAsset.Release(this);
         }
     }
 
@@ -224,17 +224,10 @@ namespace ZM.ZMAsset
         }
         public async UniTask PreLoadObjAsync(string path, int count = 1)
         {
-            List<GameObject> preLoadObjList = new List<GameObject>();
             for (int i = 0; i < count; i++)
             {
                 AssetsRequest request = await InstantiateAsync(path,null);
-                preLoadObjList.Add(request.obj);
                 request.Release();
-            }
-            //回收对象到对象池
-            foreach (var obj in preLoadObjList)
-            {
-                Release(obj);
             }
         }
         /// <summary>
@@ -883,6 +876,8 @@ namespace ZM.ZMAsset
                 }
                 item.obj = obj;
                 item.path = path;
+                // Editor 首次加载同样代表一个有效持有者，缓存前必须建立首个引用。
+                item.refCount++;
                 //缓存已经加载过的资源
                 if (!mAlreayLoadAssetsDic.ContainsKey(crc))
                     mAlreayLoadAssetsDic.Add(crc, item);
@@ -967,6 +962,8 @@ namespace ZM.ZMAsset
                 }
                 item.obj = obj;
                 item.path = path;
+                // 与其他加载入口保持一致，避免首次释放时引用数从零变成负数。
+                item.refCount++;
                 //缓存已经加载过的资源
                 mAlreayLoadAssetsDic.TryAdd(crc, item);
                 return obj;
@@ -1013,7 +1010,8 @@ namespace ZM.ZMAsset
             mAlreayLoadAssetsDic.TryGetValue(crc, out var item);
             if (item==null)
             {
-                return new BundleItem { crc = crc ,refCount = 1};
+                // 新资源尚未被任何调用方持有，首次成功加载时再统一增加引用计数。
+                return new BundleItem { crc = crc, refCount = 0 };
             }
             item.refCount++;
             return item;;

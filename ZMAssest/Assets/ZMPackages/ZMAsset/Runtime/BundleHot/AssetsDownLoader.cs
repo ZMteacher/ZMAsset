@@ -10,6 +10,7 @@
 *
 * Modify: 
 ------------------------------------------------------------------------------------------------------------------------------------------------*/
+using System;
 using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
@@ -72,6 +73,13 @@ namespace ZM.ZMAsset
         /// 当前所有正在下载的线程列表
         /// </summary>
         private List<DownLoadThread> mAllDownLoadThreadList = new List<DownLoadThread>();
+        /// <summary>
+        /// 下载队列和活动任务共享同一把锁，保证多个下载线程回调时终态只计算一次。
+        /// </summary>
+        private readonly object mDownloadStateLock = new object();
+        private bool mHasDownloadFailed;
+        private bool mTerminalEventQueued;
+        private HotFileInfo mFirstFailedHotFile;
 
         /// <summary>
         /// 资源下载器
@@ -97,60 +105,74 @@ namespace ZM.ZMAsset
 
         public void StartThreadDownLoadQueue()
         {
-            //根据最大的线程下载个数，开启基本下载通道
-            for (int i = 0; i < MAX_THREAD_COUNT; i++)
-            {
-                if (mDownLoadQueue.Count > 0)
-                {
-                    Debug.Log("Start DownLoad AssetBundle MAX_THREAD_COUNT:" + MAX_THREAD_COUNT);
-                    StartDownLoadNextBundle();
-                }
-            }
+            // 非法线程数至少降级为单线程，避免队列永远无法启动。
+            if (MAX_THREAD_COUNT <= 0)
+                MAX_THREAD_COUNT = 1;
+            ScheduleAvailableDownloads();
         }
         /// <summary>
         /// 开始下载下一个AssetBundle
         /// </summary>
         public void StartDownLoadNextBundle()
         {
-            HotFileInfo hotFileInfo = mDownLoadQueue.Dequeue();
-            DownLoadThread downLoadItem = new DownLoadThread(mCurHotAssetsModule, hotFileInfo, mAssetsDownLoadUrl, mHotAssetsSavePath);
-            downLoadItem.StartDownLoad(DownLoadSuccess, DownLoadFailed);
-            mAllDownLoadThreadList.Add(downLoadItem);
+            ScheduleAvailableDownloads();
         }
         /// <summary>
         /// 开始下载下一个AssetBundle
         /// </summary>
         public void DownLoadNextBundle()
         {
-            //如果当前下载的线程个数，大于最大的限制个数，我们就关闭当前下载通道
-            if (mAllDownLoadThreadList.Count>MAX_THREAD_COUNT)
+            ScheduleAvailableDownloads();
+        }
+
+        /// <summary>
+        /// 在锁内补齐可用下载通道，并在全部任务结束后生成唯一终态事件。
+        /// </summary>
+        private void ScheduleAvailableDownloads()
+        {
+            List<DownLoadThread> downloadItems = new List<DownLoadThread>();
+            DownLoadEvent terminalEvent = null;
+            HotFileInfo terminalFile = null;
+
+            lock (mDownloadStateLock)
             {
-                Debug.Log("DownLoadNextBundle Out MaxThreadCount,Close this DownLoad Channel...");
-                return;
-            }
-            if (mDownLoadQueue.Count>0)
-            {
-                StartDownLoadNextBundle();
-                if (mAllDownLoadThreadList.Count<MAX_THREAD_COUNT)
+                int threadLimit = Math.Max(1, MAX_THREAD_COUNT);
+                while (mDownLoadQueue.Count > 0 && mAllDownLoadThreadList.Count < threadLimit)
                 {
-                    //计算出正在待机的线程下载通道，把这些下载通道全部打开
-                    int idleThreadCount = MAX_THREAD_COUNT - mAllDownLoadThreadList.Count;
-                    for (int i = 0; i < idleThreadCount; i++)
-                    {
-                        if (mDownLoadQueue.Count>0)
-                        {
-                            StartDownLoadNextBundle();
-                        }
-                    }
+                    HotFileInfo hotFileInfo = mDownLoadQueue.Dequeue();
+                    DownLoadThread downloadItem = new DownLoadThread(
+                        mCurHotAssetsModule,
+                        hotFileInfo,
+                        mAssetsDownLoadUrl,
+                        mHotAssetsSavePath);
+                    // 先登记活动任务再启动，避免极快失败时回调先于列表登记。
+                    mAllDownLoadThreadList.Add(downloadItem);
+                    downloadItems.Add(downloadItem);
+                }
+
+                if (mDownLoadQueue.Count == 0 &&
+                    mAllDownLoadThreadList.Count == 0 &&
+                    !mTerminalEventQueued)
+                {
+                    mTerminalEventQueued = true;
+                    terminalEvent = mHasDownloadFailed ? OnDownLoadFailed : OnDownLoadFinish;
+                    terminalFile = mFirstFailedHotFile;
                 }
             }
-            else
+
+            foreach (DownLoadThread downloadItem in downloadItems)
             {
-                //如果下载中的文件也没有了，就说明我们所有文件都下载成功了
-                if (mAllDownLoadThreadList.Count==0)
+                Debug.Log("Start DownLoad AssetBundle MAX_THREAD_COUNT:" + MAX_THREAD_COUNT);
+                downloadItem.StartDownLoad(DownLoadSuccess, DownLoadFailed);
+            }
+
+            if (terminalEvent != null)
+            {
+                TriggerCallBackInMainThread(new DownLoadEventHandler
                 {
-                    TriggerCallBackInMainThread(new DownLoadEventHandler { downLoadEvent=OnDownLoadFinish });
-                }
+                    downLoadEvent = terminalEvent,
+                    hotfileInfo = terminalFile
+                });
             }
         }
         /// <summary>
@@ -160,10 +182,16 @@ namespace ZM.ZMAsset
         /// <param name="hotFileInfo"></param>
         public void DownLoadSuccess(DownLoadThread downLoadThread,HotFileInfo hotFileInfo)
         {
-            RemoveDownLoadThread(downLoadThread);
-            //因为我们的文件 是在子线程中进行下载，所以说回调也是在子线程中触发。
-            //我们要做的事情，就是把回调放到主线程中去调用。
-            TriggerCallBackInMainThread(new DownLoadEventHandler { downLoadEvent = OnDownLoadSuccess, hotfileInfo = hotFileInfo });
+            lock (mDownloadStateLock)
+            {
+                mAllDownLoadThreadList.Remove(downLoadThread);
+                // 单文件事件必须在移除活动任务的同一临界区内入队，确保整批终态永远排在其后。
+                TriggerCallBackInMainThread(new DownLoadEventHandler
+                {
+                    downLoadEvent = OnDownLoadSuccess,
+                    hotfileInfo = hotFileInfo
+                });
+            }
             DownLoadNextBundle();
         }
         /// <summary>
@@ -173,8 +201,14 @@ namespace ZM.ZMAsset
         /// <param name="hotFileInfo"></param>
         public void DownLoadFailed(DownLoadThread downLoadThread, HotFileInfo hotFileInfo)
         {
-            RemoveDownLoadThread(downLoadThread);
-            TriggerCallBackInMainThread(new DownLoadEventHandler { downLoadEvent = OnDownLoadFailed, hotfileInfo = hotFileInfo });
+            lock (mDownloadStateLock)
+            {
+                mAllDownLoadThreadList.Remove(downLoadThread);
+                mHasDownloadFailed = true;
+                // 保留第一个失败文件，最终失败回调可以给出稳定、可诊断的目标。
+                if (mFirstFailedHotFile == null)
+                    mFirstFailedHotFile = hotFileInfo;
+            }
             DownLoadNextBundle();
         }
 
@@ -204,7 +238,7 @@ namespace ZM.ZMAsset
         }
         public void RemoveDownLoadThread(DownLoadThread downLoadThread)
         {
-            lock (mAllDownLoadThreadList)
+            lock (mDownloadStateLock)
             {
                 if (mAllDownLoadThreadList.Contains(downLoadThread))
                 {
