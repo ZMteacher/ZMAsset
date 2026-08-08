@@ -14,13 +14,15 @@ public static class RemoteAssetTestWindowGenerator
 {
     private const string OutputRoot = "Assets/Test/RemoteAssetTest/Resources";
     private const string WindowPrefabPath = OutputRoot + "/RemoteAssetTestWindow.prefab";
-    private const string ItemPrefabPath = OutputRoot + "/Item/RemoteAssetTestItem.prefab";
+    // Item 预制体不放 Resources 下：Resources 会被 WindowConfig 递归扫描注册为"窗口"（噪音），
+    // LoopListView2 通过 AssetDatabase guid 引用，不依赖 Resources 加载。
+    private const string ItemPrefabPath = "Assets/Test/RemoteAssetTest/ItemPrefab/RemoteAssetTestItem.prefab";
     private const string UISettingPath = "Assets/ZMPackages/ZMUI/Resources/UISetting.asset";
 
     [MenuItem("ZM/RemoteAssetTest/生成测试窗口预制体")]
     public static void Generate()
     {
-        EnsureFolder(OutputRoot + "/Item");
+        EnsureFolder("Assets/Test/RemoteAssetTest/ItemPrefab");
 
         // ---------- 1. Item 预制体 ----------
         GameObject itemRoot = CreateUIGameObject("RemoteAssetTestItem", Vector2.zero, new Vector2(600, 90));
@@ -173,7 +175,11 @@ public static class RemoteAssetTestWindowGenerator
 
         // ---------- 6. 注册 UISetting 窗口目录 ----------
         UISetting setting = AssetDatabase.LoadAssetAtPath<UISetting>(UISettingPath);
-        if (setting != null && setting.WindowPrefabFolderPathArr != null)
+        if (setting == null)
+        {
+            Debug.LogError($"[RemoteAssetTest] 未找到 UISetting：{UISettingPath}，窗口无法注册");
+        }
+        else if (setting.WindowPrefabFolderPathArr != null)
         {
             bool contains = System.Array.IndexOf(setting.WindowPrefabFolderPathArr, OutputRoot) >= 0;
             if (!contains)

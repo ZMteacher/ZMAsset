@@ -1,3 +1,4 @@
+using System;
 using Cysharp.Threading.Tasks;
 using UnityEngine;
 using ZM.UI;
@@ -21,7 +22,6 @@ public class RemoteAssetTestWindow : WindowBase
         mDisableAnim = true;
         base.OnAwake();
         dataCompt.serverText.text = "服务器：" + BundleSettings.Instance.AssetBundleDownLoadUrl;
-        RefreshViewList();
     }
 
     public override void OnShow()
@@ -56,8 +56,14 @@ public class RemoteAssetTestWindow : WindowBase
         try
         {
             RemotePreDownloadResult result = await ZMAsset.Remote.PreDownloadAsync(ModuleName, OnProgressChanged);
+            if (dataCompt == null) return;
+            OnProgressChanged(1f);
             Debug.Log($"[RemoteAssetTest] 预下载完成：总数 {result.TotalCount}，成功 {result.SuccessCount}，失败 {result.FailedFileNames.Count}");
             RefreshViewList();
+        }
+        catch (Exception exception)
+        {
+            Debug.LogError($"[RemoteAssetTest] 预下载失败：{exception}");
         }
         finally
         {
@@ -77,6 +83,7 @@ public class RemoteAssetTestWindow : WindowBase
             int total = RemoteAssetTestItemData.sItems.Length;
             for (int i = 0; i < total; i++)
             {
+                if (dataCompt == null) return;
                 RemoteAssetTestItemData itemData = RemoteAssetTestItemData.sItems[i];
                 int completed = i;
                 Texture texture = await ZMAsset.Remote.LoadAsync<Texture>(
@@ -86,10 +93,15 @@ public class RemoteAssetTestWindow : WindowBase
 
                 itemData.Texture = texture;
                 itemData.IsReady = texture != null;
+                if (dataCompt == null) return;
                 OnProgressChanged((i + 1f) / total);
                 RefreshViewList();
             }
             Debug.Log("[RemoteAssetTest] 逐项加载完成");
+        }
+        catch (Exception exception)
+        {
+            Debug.LogError($"[RemoteAssetTest] 逐项加载失败：{exception}");
         }
         finally
         {
