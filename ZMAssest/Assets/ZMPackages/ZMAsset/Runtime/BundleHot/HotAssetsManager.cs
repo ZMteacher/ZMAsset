@@ -335,15 +335,32 @@ namespace ZM.ZMAsset
             }
 
             HotAssetsModule assetsModule = GetOrNewAssetModule(bundleModule);
-            
-            (bool isHot, float downloadSizeMb) = await assetsModule.CheckAssetsVersionAsync();
-            
-            if (!isHot)
+
+            (bool isHot, float sizeMb) versionResult;
+            try
             {
-                // 无补丁模块仍要确保配置初始化；异常沿任务传播，不再被回调中的 async lambda 静默呑掉。
-                await ZMAsset.Modules.InitializeAsync(bundleModule);
+                // 只有成功取得并校验远端清单，版本检查才允许产生确定结论。
+                versionResult = await assetsModule.CheckAssetsVersionAsync();
             }
-            return new HotUpdateVersionCheckResult(isHot, downloadSizeMb);
+            catch (Exception exception)
+            {
+                // 网络、HTTP 或清单格式失败都必须返回“无法确认”，不能伪装成无更新并初始化模块。
+                string message = $"模块 {bundleModule} 无法确认资源版本，请检查网络或清单服务后重试。";
+                Debug.LogError($"{message} 原因：{exception}");
+                return HotUpdateVersionCheckResult.CreateUnableToConfirm(message, exception);
+            }
+
+            if (!versionResult.isHot)
+            {
+                // 只有确认无更新时才初始化当前模块，Unknown 状态不会进入这里。
+                bool initialized = await ZMAsset.Modules.InitializeAsync(bundleModule);
+                if (!initialized)
+                {
+                    throw new InvalidOperationException(
+                        $"模块 {bundleModule} 已确认无需热更，但资源配置初始化失败，已阻止继续进入业务。");
+                }
+            }
+            return new HotUpdateVersionCheckResult(versionResult.isHot, versionResult.sizeMb);
         }
         /// <summary>
         /// 获取热更模块

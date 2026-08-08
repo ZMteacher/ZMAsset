@@ -11,6 +11,7 @@
 * Modify: 
 ------------------------------------------------------------------------------------------------------------------------------------------------*/
 using Newtonsoft.Json;
+using Newtonsoft.Json.Linq;
 using System;
 using System.Collections;
 using System.Collections.Generic;
@@ -75,7 +76,7 @@ namespace ZM.ZMAsset
         /// <summary>
         /// 热更公告
         /// </summary>
-        public string UpdateNoticeContent { get { return mServerHotAssetsManifest.updateNotice; } }
+        public string UpdateNoticeContent { get { return mServerHotAssetsManifest?.updateNotice; } }
         /// <summary>
         /// 当前下载的资源模块类型
         /// </summary>
@@ -183,24 +184,19 @@ namespace ZM.ZMAsset
             mIsHotUpdateRunning = true;
             if (isCheckAssetsVersion)
             {
-                //检测资源版本是否需要热更
-                // 先读取服务端 Manifest 并计算差异；只有确实有补丁才进入 staging 下载。
-                CheckAssetsVersion((isHot,size)=> {
-                    if (isHot)
-                    {
-                        // 版本有变化：创建临时快照并开始下载，正式目录此时仍保持旧版本。
-                        StartDownLoadHotAssets(startDownLoadCallback);
-                    }
-                    else
-                    {
-                        // 没有补丁：不创建事务，但仍确保当前磁盘配置已初始化。
-                        InitializeCurrentConfigurationAndNotify();
-                    }
-                });
+                // 版本有变化才创建 staging；版本检查异常由异步方法统一进入失败收口。
+                StartHotAssetsAfterVersionCheckAsync(startDownLoadCallback).Forget();
             }
             else
             {
-                // 调用方已明确跳过版本检查，直接使用此前准备好的 Manifest 差异开始下载。
+                // 调用方显式跳过版本检查时，仍必须提供此前成功取得的清单，不能在未知状态下直接启动下载。
+                if (mServerHotAssetsManifest == null)
+                {
+                    mIsHotUpdateRunning = false;
+                    DownLoadAssetBundleFailed(null);
+                    return;
+                }
+
                 StartDownLoadHotAssets(startDownLoadCallback);
             }
         }
@@ -228,25 +224,28 @@ namespace ZM.ZMAsset
 
             if (!isCheckAssetsVersion)
             {
+                // 多模块显式跳过版本检查同样要求已有可信清单，否则准备阶段必须失败并触发整组回滚。
+                if (mServerHotAssetsManifest == null)
+                {
+                    mIsHotUpdateRunning = false;
+                    mCoordinatedFailedCallback?.Invoke(
+                        this,
+                        null,
+                        new HotUpdateVersionCheckException(
+                            CurBundleModuleName,
+                            "MissingManifest",
+                            $"模块 {CurBundleModuleName} 跳过版本检查时没有可用的已验证清单。"));
+                    return;
+                }
+
                 StartDownLoadHotAssets(startDownloadCallback);
                 return;
             }
 
-            CheckAssetsVersion((isHot, size) =>
-            {
-                // 版本请求本身暂不支持取消；旧请求延迟返回时必须忽略，不能污染下一次事务。
-                if (!mIsCoordinatedTransaction || !mIsHotUpdateRunning || operationId != mCoordinatedOperationId)
-                    return;
-
-                if (isHot)
-                {
-                    StartDownLoadHotAssets(startDownloadCallback);
-                    return;
-                }
-
-                // 无版本变化的模块仍参与统一初始化顺序，但不会创建或切换磁盘快照。
-                mCoordinatedPreparedCallback?.Invoke(this, false);
-            });
+            // 多模块事务同样直接等待版本检查，避免回调异常导致协调器只能等待超时。
+            PrepareCoordinatedTransactionAfterVersionCheckAsync(
+                startDownloadCallback,
+                operationId).Forget();
         }
         /// <summary>
         /// 开始下载热更资源
@@ -320,6 +319,9 @@ namespace ZM.ZMAsset
             //生成热更清单路径
             GeneratorHotAssetsManifest();
 
+            // 每次请求前清空上一次成功请求留下的对象，网络失败时绝不能继续复用旧清单得出错误结论。
+            mServerHotAssetsManifest = null;
+
             try
             {
                 // 版本比较前先恢复上次中断事务，避免用半切换的 Manifest 计算补丁差异。
@@ -327,8 +329,12 @@ namespace ZM.ZMAsset
             }
             catch (Exception exception)
             {
-                // 正式资源目录始终是完整旧版或完整新版；恢复失败时保留事务材料并继续联网校验。
-                Debug.LogError($"模块 {CurBundleModuleName} 恢复上次热更新事务失败：{exception}");
+                // 恢复失败意味着正式目录和事务材料的关系无法确认，必须失败关闭，不能继续联网后误判为无更新。
+                throw new HotUpdateVersionCheckException(
+                    CurBundleModuleName,
+                    "Recovery",
+                    $"模块 {CurBundleModuleName} 恢复上次热更新事务失败。",
+                    exception);
             }
             mNeedDownLoadAssetsList.Clear();
             // 每次版本检测都重新构造服务端完整文件集合，禁止历史版本文件残留。
@@ -348,29 +354,70 @@ namespace ZM.ZMAsset
         }
 
         /// <summary>
-        /// 检测资源版本
+        /// 单模块版本检查完成后的异步分支；成功结果直接决定下载或初始化路径。
         /// </summary>
-        /// <param name="checkCallBack"></param>
-        public void CheckAssetsVersion(Action<bool,float> checkCallBack)
-        {
-            CheckAssetsVersionSafeAsync(checkCallBack).Forget();
-        }
-
-        /// <summary>
-        /// 异常安全的版本检查包装器：确保回调总会被调用，避免异常被 .Forget() 吞掉导致 Coordinator 永久挂起。
-        /// </summary>
-        private async UniTaskVoid CheckAssetsVersionSafeAsync(Action<bool, float> checkCallBack)
+        private async UniTask StartHotAssetsAfterVersionCheckAsync(Action startDownloadCallback)
         {
             try
             {
-                var result = await CheckAssetsVersionAsync();
-                checkCallBack?.Invoke(result.isHot, result.sizeMb);
+                (bool isHot, _) = await CheckAssetsVersionAsync();
+                if (isHot)
+                {
+                    // 版本有变化：创建临时快照并开始下载，正式目录此时仍保持旧版本。
+                    StartDownLoadHotAssets(startDownloadCallback);
+                    return;
+                }
+
+                // 没有补丁：不创建事务，但仍确保当前磁盘配置已初始化。
+                await InitializeCurrentConfigurationAndNotifyAsync();
             }
             catch (Exception exception)
             {
                 Debug.LogError($"模块 {CurBundleModuleName} 版本检查失败：{exception}");
-                // 异常时安全降级：通知无需热更，避免 Coordinator 等待循环永久挂起
-                checkCallBack?.Invoke(false, 0f);
+                // 版本检查失败不能伪装成“无需热更”，否则业务会继续使用未知版本资源。
+                DownLoadAssetBundleFailed(null);
+            }
+        }
+
+        /// <summary>
+        /// 多模块事务版本检查完成后的异步分支；旧操作返回时通过 operationId 丢弃结果。
+        /// </summary>
+        private async UniTask PrepareCoordinatedTransactionAfterVersionCheckAsync(
+            Action startDownloadCallback,
+            int operationId)
+        {
+            try
+            {
+                (bool isHot, _) = await CheckAssetsVersionAsync();
+
+                // 版本请求本身支持异步等待；旧请求延迟返回时必须忽略，不能污染下一次事务。
+                if (!mIsCoordinatedTransaction ||
+                    !mIsHotUpdateRunning ||
+                    operationId != mCoordinatedOperationId)
+                {
+                    return;
+                }
+
+                if (isHot)
+                {
+                    StartDownLoadHotAssets(startDownloadCallback);
+                    return;
+                }
+
+                // 无版本变化的模块仍参与统一初始化顺序，但不会创建或切换磁盘快照。
+                mCoordinatedPreparedCallback?.Invoke(this, false);
+            }
+            catch (Exception exception)
+            {
+                if (!mIsCoordinatedTransaction ||
+                    !mIsHotUpdateRunning ||
+                    operationId != mCoordinatedOperationId)
+                {
+                    return;
+                }
+
+                mIsHotUpdateRunning = false;
+                mCoordinatedFailedCallback?.Invoke(this, null, exception);
             }
         }
         /// <summary>
@@ -430,6 +477,13 @@ namespace ZM.ZMAsset
             {
                 Debug.Log($"{CurBundleModuleName} 属于全版本热更资源，计算热更需要下载的文件");
             }
+
+            // 服务端合法清单可以没有补丁；此时必须直接确认无更新，避免后续访问空列表的最后一项。
+            if (mServerHotAssetsManifest.hotAssetsPatchList.Count == 0)
+            {
+                return false;
+            }
+
             //如果本地资源清单文件不存在，说明我们需要热更
             if (!File.Exists(mLocalHotAssetManifestPath))
             {
@@ -437,6 +491,11 @@ namespace ZM.ZMAsset
             }
             //判断本地资源清单补丁版本号是否与服务端资源清单补丁版本号一致，如果一致，不需要热更， 如果不一致，则需要热更
             HotAssetsManifest localHotAssetsManifest = JsonConvert.DeserializeObject<HotAssetsManifest>(File.ReadAllText(mLocalHotAssetManifestPath));
+            if (localHotAssetsManifest == null || localHotAssetsManifest.hotAssetsPatchList == null)
+            {
+                // 本地清单损坏时按需要热更处理，让后续事务重新生成可用的本地状态。
+                return true;
+            }
             if (localHotAssetsManifest.hotAssetsPatchList.Count==0 && mServerHotAssetsManifest.hotAssetsPatchList.Count!=0)
             {
                 return true;
@@ -473,43 +532,353 @@ namespace ZM.ZMAsset
         private async UniTask DownLoadHotAssetsManifestAsync()
         {
             string url = $"{BundleSettings.Instance.AssetBundleDownLoadUrl}/HotAssets/{CurBundleModuleName}/{BundleSettings.Instance.HotManifestName(CurBundleModuleName)}";
+            Debug.Log($"*** Request AssetBundle HotAssetsMainfest Url Start Module:{CurBundleModuleName} url:{url}");
+
             using (UnityWebRequest webRequest = UnityWebRequest.Get(url))
             {
                 webRequest.timeout = 30;
-                Debug.Log($"*** Request AssetBundle HotAssetsMainfest Url Start Module:{CurBundleModuleName} url:{url}");
-
-                await webRequest.SendWebRequest();
+                try
+                {
+                    // UnityWebRequest 的异步等待只负责等待请求结束，HTTP 状态和数据内容仍需要显式校验。
+                    await webRequest.SendWebRequest();
+                }
+                catch (Exception exception)
+                {
+                    throw new HotUpdateVersionCheckException(CurBundleModuleName, "Network", $"模块 {CurBundleModuleName} 请求热更清单失败。", exception);
+                }
 
 #if UNITY_2020_1_OR_NEWER
-                if (webRequest.result == UnityWebRequest.Result.ConnectionError)
+                if (webRequest.result != UnityWebRequest.Result.Success)
 #else
-                if (webRequest.isNetworkError)
+                if (webRequest.isNetworkError || webRequest.isHttpError)
 #endif
                 {
-                    Debug.LogError("DownLoad Error:" + webRequest.error);
+                    string error = string.IsNullOrEmpty(webRequest.error) ? "远端服务器未返回成功状态。" : webRequest.error;
+
+                    throw new HotUpdateVersionCheckException(CurBundleModuleName, "Http", $"模块 {CurBundleModuleName} 请求热更清单失败：{error}");
                 }
-                else
+
+                string downLoadContent = webRequest.downloadHandler?.text;
+                if (string.IsNullOrWhiteSpace(downLoadContent))
                 {
-                    string downLoadContent = webRequest.downloadHandler.text;
-                    try
+                    throw new HotUpdateVersionCheckException(CurBundleModuleName, "EmptyResponse", $"模块 {CurBundleModuleName} 收到空的热更清单响应。");
+                }
+
+                await ApplyDownloadedManifestContentAsync(downLoadContent);
+            }
+        }
+
+        /// <summary>
+        /// 对远端清单执行解析、结构校验和缓存原子写入，保证所有来源遵循同一条失败关闭路径。
+        /// </summary>
+        private async UniTask ApplyDownloadedManifestContentAsync(string downLoadContent)
+        {
+            if (string.IsNullOrWhiteSpace(downLoadContent))
+            {
+                throw new HotUpdateVersionCheckException(CurBundleModuleName, "EmptyResponse", $"模块 {CurBundleModuleName} 收到空的热更清单响应。");
+            }
+
+            HotAssetsManifest downloadedManifest;
+            try
+            {
+                // 先检查关键字段是否真实存在，避免模型字段初始化器把缺失字段伪装成空列表。
+                JObject manifestObject = JObject.Parse(downLoadContent);
+                ValidateManifestJsonStructure(manifestObject);
+                downloadedManifest = manifestObject.ToObject<HotAssetsManifest>();
+            }
+            catch (HotUpdateVersionCheckException)
+            {
+                // 结构校验已经生成了精确失败类别，原样向上抛出，避免覆盖诊断上下文。
+                throw;
+            }
+            catch (Exception exception)
+            {
+                throw new HotUpdateVersionCheckException(
+                    CurBundleModuleName,
+                    "InvalidManifest",
+                    $"模块 {CurBundleModuleName} 的热更清单不是合法 JSON。",
+                    exception);
+            }
+
+            ValidateDownloadedManifest(downloadedManifest);
+
+            // 服务端清单缓存只用于诊断和下次排查，不作为本次版本判断的权威来源；写缓存失败不能改变已确认的远端结果。
+            string manifestStagingPath = mServerHotAssetsManifestPath + ".writing";
+            try
+            {
+                await File.WriteAllTextAsync(manifestStagingPath, downLoadContent);
+                RemoteAssetModule.PromoteVerifiedFile(manifestStagingPath, mServerHotAssetsManifestPath);
+            }
+            catch (Exception exception)
+            {
+                TryDeleteManifestStagingFile(manifestStagingPath);
+                Debug.LogWarning(
+                    $"模块 {CurBundleModuleName} 远端热更清单已校验成功，但本地缓存写入失败：{exception.Message}");
+            }
+
+            // 只有合法清单才允许进入后续版本比较和下载事务。
+            mServerHotAssetsManifest = downloadedManifest;
+            Debug.Log($"*** Request AssetBundle HotAssetsMainfest Url Finish Module:{CurBundleModuleName}");
+        }
+
+        /// <summary>
+        /// 校验 JSON 中的关键数组字段，区分“合法空列表”和“服务端漏字段”。
+        /// </summary>
+        private void ValidateManifestJsonStructure(JObject manifestObject)
+        {
+            if (manifestObject == null)
+            {
+                throw new HotUpdateVersionCheckException(CurBundleModuleName, "InvalidManifest", $"模块 {CurBundleModuleName} 的热更清单 JSON 对象为空。");
+            }
+
+            JToken patchListToken = manifestObject.GetValue("hotAssetsPatchList", StringComparison.OrdinalIgnoreCase);
+            if (patchListToken == null || patchListToken.Type != JTokenType.Array)
+            {
+                throw new HotUpdateVersionCheckException(CurBundleModuleName, "InvalidManifest", $"模块 {CurBundleModuleName} 的热更清单缺少有效的补丁列表。");
+            }
+
+            foreach (JToken patchToken in patchListToken)
+            {
+                if (patchToken == null || patchToken.Type != JTokenType.Object)
+                {
+                    throw new HotUpdateVersionCheckException(
+                        CurBundleModuleName,
+                        "InvalidManifest",
+                        $"模块 {CurBundleModuleName} 的热更清单包含非法补丁项。");
+                }
+
+                JObject patchObject = (JObject)patchToken;
+                JToken patchVersionToken = patchObject.GetValue("patchVersion", StringComparison.OrdinalIgnoreCase);
+                if (patchVersionToken == null ||
+                    patchVersionToken.Type != JTokenType.Integer ||
+                    patchVersionToken.Value<long>() < 0)
+                {
+                    throw new HotUpdateVersionCheckException(
+                        CurBundleModuleName,
+                        "InvalidManifest",
+                        $"模块 {CurBundleModuleName} 的热更清单补丁缺少有效的 patchVersion。");
+                }
+
+                JToken assetListToken = patchObject.GetValue("hotAssetsList", StringComparison.OrdinalIgnoreCase);
+                if (assetListToken == null || assetListToken.Type != JTokenType.Array)
+                {
+                    throw new HotUpdateVersionCheckException(
+                        CurBundleModuleName,
+                        "InvalidManifest",
+                        $"模块 {CurBundleModuleName} 的热更清单补丁缺少有效资源列表。");
+                }
+
+                foreach (JToken assetToken in assetListToken)
+                {
+                    if (assetToken == null || assetToken.Type != JTokenType.Object)
                     {
-                        Debug.Log($"*** Request AssetBundle HotAssetsMainfest Url Finish Module:{CurBundleModuleName} txt:{downLoadContent}");
-                        //写入服务端资源热更清单到本地：先写临时文件再原子切换，避免进程中断留下半个 JSON 缓存；
-                        //清单只有几 KB，同步写入可在当前 try-catch 内立即发现失败，替代原来不可观测的 async void 写法。
-                        string manifestStagingPath = mServerHotAssetsManifestPath + ".writing";
-                        
-                        await File.WriteAllTextAsync(manifestStagingPath, downLoadContent);
-                        
-                        RemoteAssetModule.PromoteVerifiedFile(manifestStagingPath, mServerHotAssetsManifestPath);
-                        
-                        if (!string.IsNullOrEmpty(downLoadContent) && downLoadContent.Contains("md5"))
-                            mServerHotAssetsManifest = JsonConvert.DeserializeObject<HotAssetsManifest>(downLoadContent);
+                        throw new HotUpdateVersionCheckException(
+                            CurBundleModuleName,
+                            "InvalidManifest",
+                            $"模块 {CurBundleModuleName} 的热更清单包含非法资源项。");
                     }
-                    catch (Exception e)
+
+                    JObject assetObject = (JObject)assetToken;
+                    JToken nameToken = assetObject.GetValue("abName", StringComparison.OrdinalIgnoreCase);
+                    JToken md5Token = assetObject.GetValue("md5", StringComparison.OrdinalIgnoreCase);
+                    JToken sizeToken = assetObject.GetValue("size", StringComparison.OrdinalIgnoreCase);
+                    if (nameToken == null || nameToken.Type != JTokenType.String ||
+                        md5Token == null || md5Token.Type != JTokenType.String ||
+                        sizeToken == null ||
+                        (sizeToken.Type != JTokenType.Integer && sizeToken.Type != JTokenType.Float))
                     {
-                        Debug.LogError("服务端资源清单配置下载异常，文件不存在或者配置有问题，更新出错，请检查：" + e.ToString());
+                        throw new HotUpdateVersionCheckException(
+                            CurBundleModuleName,
+                            "InvalidManifest",
+                            $"模块 {CurBundleModuleName} 的热更清单资源项缺少有效的 abName、md5 或 size。");
                     }
                 }
+            }
+        }
+
+        /// <summary>
+        /// 校验清单的最小运行结构，避免后续按补丁索引时出现空引用或把损坏响应当作无更新。
+        /// </summary>
+        private void ValidateDownloadedManifest(HotAssetsManifest manifest)
+        {
+            if (manifest == null)
+            {
+                throw new HotUpdateVersionCheckException(
+                    CurBundleModuleName,
+                    "InvalidManifest",
+                    $"模块 {CurBundleModuleName} 的热更清单反序列化结果为空。");
+            }
+
+            if (string.IsNullOrWhiteSpace(manifest.appVersion))
+            {
+                throw new HotUpdateVersionCheckException(
+                    CurBundleModuleName,
+                    "InvalidManifest",
+                    $"模块 {CurBundleModuleName} 的热更清单缺少应用版本。");
+            }
+
+            if (manifest.hotAssetsPatchList == null)
+            {
+                throw new HotUpdateVersionCheckException(
+                    CurBundleModuleName,
+                    "InvalidManifest",
+                    $"模块 {CurBundleModuleName} 的热更清单缺少补丁列表。");
+            }
+
+            bool hasAssets = false;
+            int previousPatchVersion = -1;
+            HashSet<string> assetNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            for (int index = 0; index < manifest.hotAssetsPatchList.Count; index++)
+            {
+                HotAssetsPatch patch = manifest.hotAssetsPatchList[index];
+                if (patch == null || patch.hotAssetsList == null)
+                {
+                    throw new HotUpdateVersionCheckException(
+                        CurBundleModuleName,
+                        "InvalidManifest",
+                        $"模块 {CurBundleModuleName} 的热更清单包含损坏的补丁项。");
+                }
+
+                if (patch.patchVersion < 0 || patch.patchVersion <= previousPatchVersion)
+                {
+                    throw new HotUpdateVersionCheckException(
+                        CurBundleModuleName,
+                        "InvalidManifest",
+                        $"模块 {CurBundleModuleName} 的热更清单补丁版本必须为非负值且严格递增。");
+                }
+
+                previousPatchVersion = patch.patchVersion;
+
+                hasAssets |= patch.hotAssetsList.Count > 0;
+                for (int assetIndex = 0; assetIndex < patch.hotAssetsList.Count; assetIndex++)
+                {
+                    HotFileInfo hotFile = patch.hotAssetsList[assetIndex];
+                    ValidateHotFileInfo(hotFile, assetNames);
+                }
+            }
+
+            if (hasAssets && string.IsNullOrWhiteSpace(manifest.downLoadURL))
+            {
+                throw new HotUpdateVersionCheckException(
+                    CurBundleModuleName,
+                    "InvalidManifest",
+                    $"模块 {CurBundleModuleName} 的热更清单缺少资源下载地址。");
+            }
+
+            Uri downloadUri = null;
+            if (hasAssets && !Uri.TryCreate(manifest.downLoadURL, UriKind.Absolute, out downloadUri))
+            {
+                throw new HotUpdateVersionCheckException(
+                    CurBundleModuleName,
+                    "InvalidManifest",
+                    $"模块 {CurBundleModuleName} 的热更清单下载地址不是合法绝对地址。");
+            }
+
+            if (hasAssets &&
+                !string.Equals(downloadUri.Scheme, Uri.UriSchemeHttp, StringComparison.OrdinalIgnoreCase) &&
+                !string.Equals(downloadUri.Scheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase))
+            {
+                throw new HotUpdateVersionCheckException(
+                    CurBundleModuleName,
+                    "InvalidManifest",
+                    $"模块 {CurBundleModuleName} 的热更清单下载地址协议不受支持：{downloadUri.Scheme}。");
+            }
+        }
+
+        /// <summary>
+        /// 校验单个热更文件，防止清单中的路径和校验字段影响本地文件系统边界。
+        /// </summary>
+        private void ValidateHotFileInfo(HotFileInfo hotFile, HashSet<string> assetNames)
+        {
+            if (hotFile == null)
+            {
+                throw new HotUpdateVersionCheckException(
+                    CurBundleModuleName,
+                    "InvalidManifest",
+                    $"模块 {CurBundleModuleName} 的热更清单包含空文件项。");
+            }
+
+            if (string.IsNullOrWhiteSpace(hotFile.abName) || hotFile.abName != hotFile.abName.Trim())
+            {
+                throw new HotUpdateVersionCheckException(
+                    CurBundleModuleName,
+                    "InvalidManifest",
+                    $"模块 {CurBundleModuleName} 的热更文件名为空或包含首尾空白。");
+            }
+
+            if (Path.IsPathRooted(hotFile.abName) ||
+                hotFile.abName.IndexOf('/', StringComparison.Ordinal) >= 0 ||
+                hotFile.abName.IndexOf('\\', StringComparison.Ordinal) >= 0 ||
+                hotFile.abName.IndexOf("..", StringComparison.Ordinal) >= 0)
+            {
+                throw new HotUpdateVersionCheckException(
+                    CurBundleModuleName,
+                    "InvalidManifest",
+                    $"模块 {CurBundleModuleName} 的热更文件名包含非法路径片段：{hotFile.abName}。");
+            }
+
+            char[] invalidFileNameChars = Path.GetInvalidFileNameChars();
+            for (int index = 0; index < hotFile.abName.Length; index++)
+            {
+                char character = hotFile.abName[index];
+                if (char.IsControl(character) || Array.IndexOf(invalidFileNameChars, character) >= 0)
+                {
+                    throw new HotUpdateVersionCheckException(
+                        CurBundleModuleName,
+                        "InvalidManifest",
+                        $"模块 {CurBundleModuleName} 的热更文件名包含非法字符：{hotFile.abName}。");
+                }
+            }
+
+            if (!assetNames.Add(hotFile.abName))
+            {
+                throw new HotUpdateVersionCheckException(
+                    CurBundleModuleName,
+                    "InvalidManifest",
+                    $"模块 {CurBundleModuleName} 的热更清单包含重复文件：{hotFile.abName}。");
+            }
+
+            if (string.IsNullOrWhiteSpace(hotFile.md5) || hotFile.md5.Length != 32)
+            {
+                throw new HotUpdateVersionCheckException(
+                    CurBundleModuleName,
+                    "InvalidManifest",
+                    $"模块 {CurBundleModuleName} 的热更文件缺少有效 MD5：{hotFile.abName}。");
+            }
+
+            for (int index = 0; index < hotFile.md5.Length; index++)
+            {
+                if (!Uri.IsHexDigit(hotFile.md5[index]))
+                {
+                    throw new HotUpdateVersionCheckException(
+                        CurBundleModuleName,
+                        "InvalidManifest",
+                        $"模块 {CurBundleModuleName} 的热更文件 MD5 格式非法：{hotFile.abName}。");
+                }
+            }
+
+            if (float.IsNaN(hotFile.size) || float.IsInfinity(hotFile.size) || hotFile.size < 0f)
+            {
+                throw new HotUpdateVersionCheckException(
+                    CurBundleModuleName,
+                    "InvalidManifest",
+                    $"模块 {CurBundleModuleName} 的热更文件大小非法：{hotFile.abName}。");
+            }
+        }
+
+        /// <summary>
+        /// 清理未完成的清单临时文件，避免下次启动误把半写入文件当作缓存。
+        /// </summary>
+        private static void TryDeleteManifestStagingFile(string manifestStagingPath)
+        {
+            try
+            {
+                if (File.Exists(manifestStagingPath))
+                    File.Delete(manifestStagingPath);
+            }
+            catch (Exception exception)
+            {
+                Debug.LogWarning($"清理热更清单临时文件失败：{exception.Message}");
             }
         }
         /// <summary>
@@ -744,7 +1113,7 @@ namespace ZM.ZMAsset
         /// <summary>
         /// 无需下载时仍保证当前磁盘配置已经初始化，再向业务层发送完成事件。
         /// </summary>
-        private async void InitializeCurrentConfigurationAndNotify()
+        private async UniTask InitializeCurrentConfigurationAndNotifyAsync()
         {
             try
             {

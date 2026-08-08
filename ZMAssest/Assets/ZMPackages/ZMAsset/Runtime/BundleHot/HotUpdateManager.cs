@@ -20,6 +20,10 @@ namespace ZM.ZMAsset
     {
         private System.Action OnHotFinishCallBackAction;
         /// <summary>
+        /// 防止版本检查失败时重复创建多个重试窗口。
+        /// </summary>
+        private bool mVersionCheckFailureWindowShowing;
+        /// <summary>
         /// 热更并且解压热更模块
         /// </summary>
         /// <param name="bundleModule"></param>
@@ -36,7 +40,12 @@ namespace ZM.ZMAsset
             else
             {
                 //初始化资源模块
-                await ZMAsset.Modules.InitializeAsync(bundleModule);
+                bool initialized = await ZMAsset.Modules.InitializeAsync(bundleModule);
+                if (!initialized)
+                {
+                    Debug.LogError($"模块 {bundleModule} 初始化失败，已阻止进入游戏。");
+                    return;
+                }
                 //如果不需要热更，说明用户已经热更过了，资源是最新的，直接进入游戏 
                 OnHotFinishCallBack(bundleModule);
             }
@@ -52,11 +61,30 @@ namespace ZM.ZMAsset
         }
         public async void CheckAssetsVersion(string bundleModule)
         {
-            HotUpdateVersionCheckResult versionResult = await ZMAsset.HotUpdate.CheckVersionAsync(bundleModule);
-            bool isHot = versionResult.RequiresUpdate;
-            float sizem = versionResult.DownloadSizeMb;
-            if (isHot)
+            HotUpdateVersionCheckResult versionResult;
+            try
             {
+                versionResult = await ZMAsset.HotUpdate.CheckVersionAsync(bundleModule);
+            }
+            catch (System.Exception exception)
+            {
+                // 初始化失败或其他内部异常同样必须失败关闭，不能从 async void 逸出后继续进入游戏。
+                Debug.LogError($"模块 {bundleModule} 资源版本检查异常，已阻止进入游戏：{exception}");
+                return;
+            }
+
+            if (versionResult.Status == HotUpdateVersionCheckStatus.UnableToConfirm)
+            {
+                // 网络、HTTP 或清单格式异常只允许重试或退出，不能把 Unknown 当作无更新。
+                Debug.LogError(
+                    $"模块 {bundleModule} 无法确认资源版本，请重试：{versionResult.ErrorMessage ?? "未知原因"}");
+                ShowVersionCheckFailureWindow(bundleModule);
+                return;
+            }
+
+            if (versionResult.Status == HotUpdateVersionCheckStatus.UpdateAvailable)
+            {
+                float sizem = versionResult.DownloadSizeMb;
                 //当用户使用是流量的时候呢，需要询问用户是否需要更新资源
                 if (Application.internetReachability== NetworkReachability.ReachableViaCarrierDataNetwork||Application.platform == RuntimePlatform.WindowsEditor||Application.platform==RuntimePlatform.OSXEditor)
                 {
@@ -77,10 +105,15 @@ namespace ZM.ZMAsset
                     StartHotAssets(bundleModule);
                 }
             }
+            else if (versionResult.Status == HotUpdateVersionCheckStatus.ConfirmedNoUpdate)
+            {
+                // 只有 ConfirmedNoUpdate 才允许认为资源已确认是最新，并继续进入游戏。
+                OnHotFinishCallBack(bundleModule);
+            }
             else
             {
-                //如果不需要热更，说明用户已经热更过了，资源是最新的，直接进入游戏 TODO
-                OnHotFinishCallBack(bundleModule);
+                // 防御未来新增枚举值或非法反序列化结果，未知状态默认阻止继续。
+                Debug.LogError($"模块 {bundleModule} 返回了未识别的资源版本状态，已阻止进入游戏。");
             }
         }
         /// <summary>
@@ -118,6 +151,50 @@ namespace ZM.ZMAsset
         {
 
         }
+
+        /// <summary>
+        /// 显示版本检查失败提示，并将重试和退出明确交给用户决定。
+        /// </summary>
+        private void ShowVersionCheckFailureWindow(string bundleModule)
+        {
+            if (mVersionCheckFailureWindowShowing)
+                return;
+
+            mVersionCheckFailureWindowShowing = true;
+            UpdateTipsWindow window;
+            try
+            {
+                window = InstantiateResourcesObj<UpdateTipsWindow>("UpdateTipsWindow");
+            }
+            catch (System.Exception exception)
+            {
+                mVersionCheckFailureWindowShowing = false;
+                Debug.LogError($"无法创建资源版本检查失败提示窗：{exception}");
+                return;
+            }
+
+            if (window == null)
+            {
+                mVersionCheckFailureWindowShowing = false;
+                Debug.LogError("资源版本检查失败提示窗实例中缺少 UpdateTipsWindow 组件。");
+                return;
+            }
+
+            window.InitView(
+                $"模块 {bundleModule} 暂时无法检查资源版本，请检查网络后重试。",
+                () =>
+                {
+                    // 回调触发前释放窗口占用标记，允许用户只保留一个新的重试流程。
+                    mVersionCheckFailureWindowShowing = false;
+                    CheckAssetsVersion(bundleModule);
+                },
+                () =>
+                {
+                    mVersionCheckFailureWindowShowing = false;
+                    Application.Quit();
+                });
+        }
+
         public T InstantiateResourcesObj<T>(string prefabName)
         {
            return  GameObject.Instantiate<GameObject>(Resources.Load<GameObject>(prefabName)).GetComponent<T>();

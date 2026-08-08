@@ -14,7 +14,7 @@ namespace ZM.ZMAsset
         {
             
             /// <summary>
-            /// 检测模块资源版本，返回是否需要热更及需要下载的大小；不需要热更时已顺带完成模块初始化。
+            /// 检测模块资源版本；只有 ConfirmedNoUpdate 或 UpdateAvailable 才代表远端确认成功，UnableToConfirm 时调用方必须阻止继续进入业务。
             /// </summary>
             public static UniTask<HotUpdateVersionCheckResult> CheckVersionAsync(string moduleName)
             {

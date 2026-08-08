@@ -40,7 +40,7 @@ namespace ZM.ZMAsset
         /// </summary>
         UniTask<HotUpdateTransactionResult> HotAssetsTransactionAsync(HotUpdateTransactionRequest request);
         /// <summary>
-        /// 检测资源版本是否需要热更，获取需要热更资源的大小。
+        /// 检测资源版本，获取需要热更资源的大小；网络或清单失败时返回 UnableToConfirm，不得按无更新处理。
         /// </summary>
         /// <param name="bundleModule">热更模块类型</param>
         UniTask<HotUpdateVersionCheckResult> CheckAssetsVersionAsync(string bundleModule);
