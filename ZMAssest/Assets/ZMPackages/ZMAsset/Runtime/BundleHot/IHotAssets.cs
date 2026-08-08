@@ -1,4 +1,4 @@
-﻿/*---------------------------------------------------------------------------------------------------------------------------------------------
+/*---------------------------------------------------------------------------------------------------------------------------------------------
 *
 * Title: ZMAsset
 *
@@ -13,6 +13,7 @@
 using System;
 using System.Collections;
 using System.Collections.Generic;
+using Cysharp.Threading.Tasks;
 using UnityEngine;
 namespace ZM.ZMAsset
 {
@@ -35,11 +36,14 @@ namespace ZM.ZMAsset
             bool isCheckAssetsVersion = true,
             Action<string, HotFileInfo> hotFailed = null);
         /// <summary>
-        /// 检测资源版本是否需要热更，获取需要热更资源的大小
+        /// 按调用方给定顺序执行显式多模块热更新事务。
+        /// </summary>
+        UniTask<HotUpdateTransactionResult> HotAssetsTransactionAsync(HotUpdateTransactionRequest request);
+        /// <summary>
+        /// 检测资源版本是否需要热更，获取需要热更资源的大小。
         /// </summary>
         /// <param name="bundleModule">热更模块类型</param>
-        /// <param name="callBack">检测完成回调</param>
-        void CheckAssetsVersion(string bundleModule,Action<bool,float> callBack);
+        UniTask<HotUpdateVersionCheckResult> CheckAssetsVersionAsync(string bundleModule);
  
         /// <summary>
         /// 获取热更模块
@@ -47,6 +51,10 @@ namespace ZM.ZMAsset
         /// <param name="bundleModule">热更模块类型</param>
         /// <returns></returns>
         HotAssetsModule GetHotAssetsModule(string bundleModule);
+        /// <summary>
+        /// 获取指定模块的只读热更新状态。
+        /// </summary>
+        HotAssetsModuleState GetHotAssetsModuleState(string bundleModule);
         /// <summary>
         /// 主线程更新
         /// </summary>

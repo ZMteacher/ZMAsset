@@ -14,36 +14,59 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   AssetBundleConfig:
   - bundleid: 0
-    moduleName: Hall
-    isAddressableAsset: 0
-    isBuild: 1
-    isAddModule: 0
-    lastClickBtnTime: 23.457163
-    prefabPathArr:
-    - Assets/Prefabs
-    rootFolderPathArr:
-    - Assets/Textures
-    signFolderPathArr: []
-    sourceFolderPathArr: []
-  - bundleid: 0
-    moduleName: GameItem
-    isAddressableAsset: 0
-    isBuild: 1
-    isAddModule: 0
-    lastClickBtnTime: 1519.311
-    prefabPathArr:
-    - Assets/Prefabs
-    rootFolderPathArr: []
-    signFolderPathArr: []
-    sourceFolderPathArr:
-    - 
-  - bundleid: 0
-    moduleName: AddressAsset
+    moduleName: RemoteAsset
     isAddressableAsset: 1
     isBuild: 1
+    moduleRole: 0
     isAddModule: 0
     lastClickBtnTime: 1519.015
     prefabPathArr: []
+    prefabDependencyEntryMode: 0
     rootFolderPathArr: []
     signFolderPathArr: []
     sourceFolderPathArr: []
+    singleFilePathArr:
+    - Assets/GameData/RemoteAsset
+  - bundleid: 0
+    moduleName: Shared
+    isAddressableAsset: 0
+    isBuild: 0
+    moduleRole: 1
+    isAddModule: 0
+    lastClickBtnTime: 0
+    prefabPathArr:
+    - Assets/GameData/Shared/Prefabs
+    - Assets/GameData/Shared/Effects/Prefabs
+    prefabDependencyEntryMode: 0
+    rootFolderPathArr: []
+    signFolderPathArr: []
+    sourceFolderPathArr: []
+    singleFilePathArr: []
+  - bundleid: 0
+    moduleName: GameOne
+    isAddressableAsset: 0
+    isBuild: 0
+    moduleRole: 0
+    isAddModule: 0
+    lastClickBtnTime: 0
+    prefabPathArr:
+    - Assets/GameData/GameOne/Prefabs
+    prefabDependencyEntryMode: 0
+    rootFolderPathArr: []
+    signFolderPathArr: []
+    sourceFolderPathArr: []
+    singleFilePathArr: []
+  - bundleid: 0
+    moduleName: GameTow
+    isAddressableAsset: 0
+    isBuild: 0
+    moduleRole: 0
+    isAddModule: 0
+    lastClickBtnTime: 0
+    prefabPathArr:
+    - Assets/GameData/GameTow/Prefabs
+    prefabDependencyEntryMode: 0
+    rootFolderPathArr: []
+    signFolderPathArr: []
+    sourceFolderPathArr: []
+    singleFilePathArr: []

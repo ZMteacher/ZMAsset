@@ -18,6 +18,19 @@ using UnityEngine;
 public class BundleConfig  
 {
     /// <summary>
+    /// 00 配置协议版本 2 首次加入带模块信息的 Bundle 依赖。
+    /// 00 字段初始化器会让缺失该字段的旧 JSON 在部分反序列化器中得到 2，因此运行时还会检查 v2 载荷字段，不能只看版本号。
+    /// </summary>
+    public int formatVersion = 2;
+    /// <summary>
+    /// 00 当前配置所属模块，便于运行时在空配置和诊断场景中仍能确定所有者。
+    /// </summary>
+    public string moduleName;
+    /// <summary>
+    /// 00 当前模块依赖的其他资源模块；新运行时用它建立初始化顺序和租约图。
+    /// </summary>
+    public List<string> moduleDependencies = new List<string>();
+    /// <summary>
     /// 所有AssetBundle的信息列表
     /// </summary>
     public List<BundleInfo> bundleInfoList;
@@ -53,9 +66,34 @@ public class BundleInfo
     /// </summary>
     public bool isAddressableAsset;
     /// <summary>
+    /// 是否允许通过资源路径直接加载
+    /// </summary>
+    //00 旧版本配置没有该字段，默认 true 可保持旧配置的加载兼容性；新配置会明确区分 Entry 与仅依赖资源。
+    public bool isLoadableEntry = true;
+    /// <summary>
     /// 依赖项
     /// </summary>
     public List<string> bundleDependce;
+    /// <summary>
+    /// 00 协议版本 2 的完整 Bundle 依赖身份，跨模块依赖不再依赖“主资源模块目录”这一隐含假设。
+    /// </summary>
+    public List<BundleDependencyInfo> bundleDependencies;
+}
+
+/// <summary>
+/// 00 使用“模块 + Bundle 名称”描述一个物理 Bundle 依赖。
+/// </summary>
+[System.Serializable]
+public class BundleDependencyInfo
+{
+    /// <summary>
+    /// 00 依赖 Bundle 的真实所属模块。
+    /// </summary>
+    public string bundleModule;
+    /// <summary>
+    /// 00 依赖 Bundle 的文件名，包含框架配置的 AssetBundle 后缀。
+    /// </summary>
+    public string bundleName;
 }
 /// <summary>
 /// 内嵌的AssetBundle的信息

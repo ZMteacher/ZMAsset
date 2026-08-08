@@ -1,4 +1,4 @@
-﻿/*---------------------------------------------------------------------------------------------------------------------------------------------
+/*---------------------------------------------------------------------------------------------------------------------------------------------
 *
 * Title: ZMAsset
 *
@@ -39,6 +39,13 @@ namespace ZM.ZMAsset
         /// 下载失败回调
         /// </summary>
         public Action<DownLoadThread, HotFileInfo> OnDownLoadFailed;
+
+        /// <summary>
+        /// UnityWebRequest 下载进度回调（0~1），主线程触发，按固定间隔与最小变化量节流。
+        /// 仅 StartDownLoadAsync 路径汇报；HttpWebRequest 热更路径不汇报。
+        /// </summary>
+        public Action<DownLoadThread, HotFileInfo, float> OnDownloadProgress;
+
         /// <summary>
         /// 当前热更的资源模块
         /// </summary>
@@ -80,6 +87,11 @@ namespace ZM.ZMAsset
         private const int MAX_TRY_DOWNLOAD_COUNT = 3;
 
         /// <summary>
+        /// 保存回调式下载对应的后台任务，使上层取消事务时可以等待文件句柄真正释放。
+        /// </summary>
+        public Task CompletionTask { get; private set; } = Task.CompletedTask;
+
+        /// <summary>
         /// 资源下载线程
         /// </summary>
         /// <param name="assetsModule">资源所属模块</param>
@@ -110,75 +122,116 @@ namespace ZM.ZMAsset
         /// </summary>
         /// <param name="downLoadSuccess">下载成功回调</param>
         /// <param name="downLoadFailed">下载失败回调</param>
-        public void StartDownLoad(Action<DownLoadThread, HotFileInfo> downLoadSuccess, Action<DownLoadThread, HotFileInfo> downLoadFailed)
+        public void StartDownLoad(
+            Action<DownLoadThread, HotFileInfo> downLoadSuccess,
+            Action<DownLoadThread, HotFileInfo> downLoadFailed,
+            CancellationToken cancellationToken = default)
         {
-    
-            curDownLoadCount++;
             OnDownLoadSuccess = downLoadSuccess;
             OnDownLoadFailed = downLoadFailed;
-            Debug.Log("StartDownLoad ModuelEnum:" + mCurHotAssetsModule.CurBundleModuleName + " AssetBundle URL:" + mDownLoadUrl);
-            Task.Run(() =>
+            Debug.Log($"开始下载资源模块：{_mCurBundleModuleName}，文件地址：{mDownLoadUrl}");
+
+            // 一个文件的全部重试都归属于同一个 Task；禁止递归创建无法追踪的新后台任务。
+            CompletionTask = Task.Run(() => DownloadWithRetry(cancellationToken), cancellationToken);
+        }
+
+        /// <summary>
+        /// 在单一后台任务内完成下载和重试；取消属于事务控制流，不触发普通失败回调。
+        /// </summary>
+        /// <summary>
+        /// 在同一个后台 Task 内循环重试；成功或最终失败只调用一次对应回调，取消则不伪装成失败。
+        /// </summary>
+        private void DownloadWithRetry(CancellationToken cancellationToken)
+        {
+            while (curDownLoadCount < MAX_TRY_DOWNLOAD_COUNT)
             {
-                //这里的代码在子线程中执行
+                cancellationToken.ThrowIfCancellationRequested();
+                curDownLoadCount++;
+                mDownLoadSizeKB = 0;
+
                 try
                 {
                     HttpWebRequest request = WebRequest.Create(mDownLoadUrl) as HttpWebRequest;
+                    if (request == null)
+                        throw new InvalidOperationException($"无法创建资源下载请求：{mDownLoadUrl}");
+
                     request.Method = "GET";
-                    //发起请求
-                    HttpWebResponse response = request.GetResponse() as HttpWebResponse;
-            
-                    //创建本地文件流，使用 using 确保异常时也能释放文件句柄
+                    request.Timeout = 60000;
+                    request.ReadWriteTimeout = 60000;
+
+                    // Abort 可打断阻塞中的网络读取，保证取消事务不会无限等待后台线程。
+                    using (cancellationToken.Register(request.Abort))
+                    using (HttpWebResponse response = request.GetResponse() as HttpWebResponse)
+                    using (Stream stream = response?.GetResponseStream())
                     using (FileStream fileStream = File.Create(mFileSavePath))
-                    using (var stream = response.GetResponseStream())
                     {
-                        byte[] buffer = new byte[512];
-                        int size = stream.Read(buffer, 0, buffer.Length);
-                        
-                        while (size > 0)
+                        if (stream == null)
+                            throw new IOException($"服务器没有返回文件流：{mDownLoadUrl}");
+
+                        byte[] buffer = new byte[81920];
+                        int size;
+                        while ((size = stream.Read(buffer, 0, buffer.Length)) > 0)
                         {
+                            cancellationToken.ThrowIfCancellationRequested();
                             fileStream.Write(buffer, 0, size);
-                            size = stream.Read(buffer, 0, buffer.Length);
-                            //1mb=1024kb 1kb=1024字节
                             mDownLoadSizeKB += size;
-                            //计算以m为单位的大小
-                            mCurHotAssetsModule.AssetsDownLoadSizeM += ((size / 1024.0f) / 1024.0f);
-                        }
-                        //文件下载异常 或 下载完成的文件因网络问题或其他问题发生损坏 || MD5.GetMd5FromFile(mFileSavePath) != mHotFileInfo.md5
-                        if (mDownLoadSizeKB == 0 || MD5.GetMd5FromFile(mFileSavePath) != mHotFileInfo.md5)
-                        {
-                            Debug.LogError("File DownLoad exception plase check file fileName:" + mHotFileInfo.abName + " fileUrl:" + mDownLoadUrl);
-                            if (curDownLoadCount > MAX_TRY_DOWNLOAD_COUNT)
-                            {
-                                OnDownLoadFailed?.Invoke(this, mHotFileInfo);
-                            }
-                            else
-                            {
-                                Debug.LogError("文件下载失败，正在进行重新下载，下载次数" + curDownLoadCount);
-                                StartDownLoad(OnDownLoadSuccess, OnDownLoadFailed);
-                            }
-                        }
-                        else
-                        {
-                            Debug.Log("OnDownLoadSuccess ModuleEnum:" + mCurHotAssetsModule.CurBundleModuleName + " AssetBundleUrl:" + mDownLoadUrl + " FileSavePath:" + mFileSavePath);
-                            OnDownLoadSuccess?.Invoke(this, mHotFileInfo);
+                            mCurHotAssetsModule.AddDownloadedBytes(size);
                         }
                     }
-                    
+
+                    cancellationToken.ThrowIfCancellationRequested();
+                    bool fileIsValid = mDownLoadSizeKB > 0 &&
+                                       string.Equals(
+                                           MD5.GetMd5FromFile(mFileSavePath),
+                                           mHotFileInfo.md5,
+                                           StringComparison.OrdinalIgnoreCase);
+                    if (fileIsValid)
+                    {
+                        Debug.Log($"资源下载并校验成功，模块：{_mCurBundleModuleName}，文件：{mHotFileInfo.abName}");
+                        OnDownLoadSuccess?.Invoke(this, mHotFileInfo);
+                        return;
+                    }
+
+                    Debug.LogError($"下载文件为空或 MD5 校验失败，模块：{_mCurBundleModuleName}，文件：{mHotFileInfo.abName}");
                 }
-                catch (Exception e)
+                catch (OperationCanceledException)
                 {
-                    Debug.LogError("DownLoad AssetBundle Error Url:" + mDownLoadUrl + " Exception:" + e);
-                    if (curDownLoadCount > MAX_TRY_DOWNLOAD_COUNT)
-                    {
-                        OnDownLoadFailed?.Invoke(this, mHotFileInfo);
-                    }
-                    else
-                    {
-                        Debug.LogError("文件下载失败，正在进行重新下载，下载次数" + curDownLoadCount);
-                        StartDownLoad(OnDownLoadSuccess, OnDownLoadFailed);
-                    }
+                    DeletePartialFile();
+                    throw;
                 }
-            });
+                catch (WebException) when (cancellationToken.IsCancellationRequested)
+                {
+                    // HttpWebRequest.Abort 会表现为 WebException；在令牌已取消时统一转换为取消语义。
+                    DeletePartialFile();
+                    throw new OperationCanceledException(cancellationToken);
+                }
+                catch (Exception exception)
+                {
+                    Debug.LogError($"下载资源失败，模块：{_mCurBundleModuleName}，文件：{mHotFileInfo.abName}，第 {curDownLoadCount} 次，异常：{exception}");
+                }
+
+                DeletePartialFile();
+                if (curDownLoadCount < MAX_TRY_DOWNLOAD_COUNT)
+                    Debug.LogWarning($"准备重试下载，模块：{_mCurBundleModuleName}，文件：{mHotFileInfo.abName}，下一次：{curDownLoadCount + 1}");
+            }
+
+            OnDownLoadFailed?.Invoke(this, mHotFileInfo);
+        }
+
+        /// <summary>
+        /// 失败或取消后移除不完整文件，避免后续完整快照校验误读半文件。
+        /// </summary>
+        private void DeletePartialFile()
+        {
+            try
+            {
+                if (File.Exists(mFileSavePath))
+                    File.Delete(mFileSavePath);
+            }
+            catch (Exception exception)
+            {
+                Debug.LogWarning($"清理未完成下载文件失败，路径：{mFileSavePath}，异常：{exception}");
+            }
         }
 
          
@@ -229,7 +282,21 @@ namespace ZM.ZMAsset
                     using (UnityWebRequest webRequest = UnityWebRequest.Get(mDownLoadUrl))
                     {
                         webRequest.timeout = 60;
-                        await webRequest.SendWebRequest();
+                        // 手动轮询代替单次 await：在下载期间按 50ms 间隔汇报实时进度；
+                        // 进度变化不足 1% 时不重复回调，避免大文件下载刷爆业务进度条。
+                        UnityWebRequestAsyncOperation operation = webRequest.SendWebRequest();
+                        float lastReportedProgress = -1f;
+                        while (!operation.isDone)
+                        {
+                            float progress = webRequest.downloadProgress;
+                            if (progress - lastReportedProgress >= 0.01f)
+                            {
+                                lastReportedProgress = progress;
+                                OnDownloadProgress?.Invoke(this, mHotFileInfo, progress);
+                            }
+
+                            await UniTask.Delay(50);
+                        }
 
                         if (webRequest.result == UnityWebRequest.Result.Success)
                         {
@@ -255,7 +322,11 @@ namespace ZM.ZMAsset
                         }
 
                         // 验证下载文件是否完整，校验通过后本次下载才算成功。
-                        fileIsComplete = MD5.GetMd5FromFile(mFileSavePath) == mHotFileInfo.md5;
+                        // MD5 十六进制大小写不影响摘要值，服务端使用大写时也应通过同一完整性校验。
+                        fileIsComplete = string.Equals(
+                            MD5.GetMd5FromFile(mFileSavePath),
+                            mHotFileInfo.md5,
+                            StringComparison.OrdinalIgnoreCase);
                         mDownLoadSizeKB = buffer.Length;
                         if (!fileIsComplete)
                         {

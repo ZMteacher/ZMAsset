@@ -30,6 +30,17 @@ namespace ZM.Editor
                     alignment = TextAnchor.MiddleCenter,
                     padding = new RectOffset(0, 0, 0, 0)
                 };
+
+                //00 CardEditButton 的工厂仅显式初始化 normal / hover / active；GUILayout.Button 获得键盘焦点时会落入 focused 状态，
+                //00 Unity 的默认 focused 文本为黑色，深色卡片上不可读。因此在分析器的专用副本中补齐全部文字状态，且不改动全局样式。
+                _crossGameActionButton.normal.textColor = new Color32(205, 211, 219, 255);
+                _crossGameActionButton.hover.textColor = Color.white;
+                _crossGameActionButton.active.textColor = Color.white;
+                _crossGameActionButton.focused.textColor = Color.white;
+                _crossGameActionButton.onNormal.textColor = Color.white;
+                _crossGameActionButton.onHover.textColor = Color.white;
+                _crossGameActionButton.onActive.textColor = Color.white;
+                _crossGameActionButton.onFocused.textColor = Color.white;
                 return _crossGameActionButton;
             }
         }
@@ -226,8 +237,9 @@ namespace ZM.Editor
                     }
                     EditorGUILayout.EndVertical();
                     EditorGUILayout.Space(7);
-                }
             }
+        }
+
             else if (_t2DeepScan)
             {
                 EditorGUILayout.HelpBox("🔬 深度扫描：未发现跨游戏资源嵌入。", MessageType.Info);
@@ -324,7 +336,8 @@ namespace ZM.Editor
             var    md        = LoadOrGetManifest(srcName);
             if (md == null)
             {
-                EditorUtility.DisplayDialog("错误", $"无法加载 [{srcName}] 的 Manifest，请确认文件存在。", "确定");
+                //00 当前构建使用 bundleconfig 还原依赖图；错误提示不能再要求不存在的旧 Manifest 文件。
+                EditorUtility.DisplayDialog("错误", $"无法加载 [{srcName}] 的模块依赖配置。请先构建该模块，并确认其 bundleconfig 文件未加密。", "确定");
                 _t2Dirty = false;
                 return;
             }

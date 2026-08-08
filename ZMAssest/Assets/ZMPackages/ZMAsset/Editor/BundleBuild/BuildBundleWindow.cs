@@ -40,26 +40,26 @@ public class BuildBundleWindow : BundleBehaviour
 
     public override void BuildBundle()
     {
-        var jobs = new List<(string name, Func<System.Collections.IEnumerator> action)>();
+        //00 先冻结所有勾选模块；统一编排器会在存在依赖时自动补入未勾选 Shared。
+        var selectedModules = new List<BundleModuleData>();
         foreach (BundleModuleData item in moduleDataList)
-            if (item.isBuild)
-            {
-                BundleModuleData module = item;
-                jobs.Add((module.moduleName, () => BuildBundleCompiler.BuildAssetBundleStaged(module)));
-            }
+            if (item != null && item.isBuild) selectedModules.Add(item);
+        //00 一个统一任务可在内部保持配置、BuildPipeline 和多目录原子发布属于同一事务。
+        var jobs = new List<(string name, Func<System.Collections.IEnumerator> action)>();
+        jobs.Add(("模块依赖闭包", () => MultiModuleBuildOrchestrator.BuildStaged(selectedModules)));
         string output = Path.GetFullPath(Path.Combine(Application.dataPath, "..", "AssetBundle"));
         ZMBuildProgress.RunStaged("资源构建", jobs, output);
     }
 
     public void CopyBundleToStreamingAssetsPath()
     {
-        var jobs = new List<(string name, Action action)>();
+        //00 先冻结全部勾选模块，再以一个任务交给原子内嵌发布器，避免逐模块任务产生部分成功状态。
+        var selectedModules = new List<BundleModuleData>();
         foreach (BundleModuleData item in moduleDataList)
-            if (item.isBuild)
-            {
-                BundleModuleData module = item;
-                jobs.Add((module.moduleName, () => BuildBundleCompiler.CopyBundleToStramingAssets(module, false)));
-            }
+            if (item != null && item.isBuild) selectedModules.Add(item);
+        var jobs = new List<(string name, Action action)>();
+        //00 所有模块共用一个 staging 与一次 AtomicPublisher 提交，后一个模块失败时前面的正式目录保持原样。
+        jobs.Add(("原子内嵌事务", () => BuildBundleCompiler.CopyBundlesToStreamingAssets(selectedModules, false)));
         ZMBuildProgress.Run("内嵌资源", jobs, Application.streamingAssetsPath);
     }
 }

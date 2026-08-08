@@ -1,4 +1,4 @@
-﻿/*---------------------------------------------------------------------------------------------------------------------------------------------
+/*---------------------------------------------------------------------------------------------------------------------------------------------
 *
 * Title: ZMAsset
 *
@@ -36,7 +36,7 @@ namespace ZM.ZMAsset
             else
             {
                 //初始化资源模块
-                await ZMAsset.InitAssetsModule(bundleModule);
+                await ZMAsset.Modules.InitializeAsync(bundleModule);
                 //如果不需要热更，说明用户已经热更过了，资源是最新的，直接进入游戏 
                 OnHotFinishCallBack(bundleModule);
             }
@@ -50,45 +50,55 @@ namespace ZM.ZMAsset
                 CheckAssetsVersion(bundleModule);
             }
         }
-        public void CheckAssetsVersion(string bundleModule)
+        public async void CheckAssetsVersion(string bundleModule)
         {
-            ZMAsset.CheckAssetsVersion(bundleModule,(isHot,sizem)=> {
-                if (isHot)
+            HotUpdateVersionCheckResult versionResult = await ZMAsset.HotUpdate.CheckVersionAsync(bundleModule);
+            bool isHot = versionResult.RequiresUpdate;
+            float sizem = versionResult.DownloadSizeMb;
+            if (isHot)
+            {
+                //当用户使用是流量的时候呢，需要询问用户是否需要更新资源
+                if (Application.internetReachability== NetworkReachability.ReachableViaCarrierDataNetwork||Application.platform == RuntimePlatform.WindowsEditor||Application.platform==RuntimePlatform.OSXEditor)
                 {
-                    //当用户使用是流量的时候呢，需要询问用户是否需要更新资源
-                    if (Application.internetReachability== NetworkReachability.ReachableViaCarrierDataNetwork||Application.platform == RuntimePlatform.WindowsEditor||Application.platform==RuntimePlatform.OSXEditor)
-                    {
-                        //弹出选择弹窗，让用户决定是否更新
-                        InstantiateResourcesObj<UpdateTipsWindow>("UpdateTipsWindow").
-                        InitView("当前有"+sizem.ToString("F2")+"m,资源需要更新，是否更新",()=> {
-                            //确认更新回调
-                            StartHotAssets(bundleModule);
-                        },
-                        ()=> {
-                            //退出游戏回调
-                            Application.Quit();
-                        });
-                    }
-                    else
-                    {
-                        //开始热更资源
+                    //弹出选择弹窗，让用户决定是否更新
+                    InstantiateResourcesObj<UpdateTipsWindow>("UpdateTipsWindow").
+                    InitView("当前有"+sizem.ToString("F2")+"m,资源需要更新，是否更新",()=> {
+                        //确认更新回调
                         StartHotAssets(bundleModule);
-                    }
+                    },
+                    ()=> {
+                        //退出游戏回调
+                        Application.Quit();
+                    });
                 }
                 else
                 {
-                    //如果不需要热更，说明用户已经热更过了，资源是最新的，直接进入游戏 TODO
-                    OnHotFinishCallBack(bundleModule);
+                    //开始热更资源
+                    StartHotAssets(bundleModule);
                 }
-            });
+            }
+            else
+            {
+                //如果不需要热更，说明用户已经热更过了，资源是最新的，直接进入游戏 TODO
+                OnHotFinishCallBack(bundleModule);
+            }
         }
         /// <summary>
         /// 开始热更资源
         /// </summary>
         /// <param name="bundleModule"></param>
-        public void StartHotAssets(string bundleModule)
+        public async void StartHotAssets(string bundleModule)
         {
-            ZMAsset.HotAssets(bundleModule, OnStartHotAssetsCallBack, OnHotFinishCallBack,null,false);
+            HotUpdateTransactionResult result = await ZMAsset.HotUpdate.UpdateAsync(new[] { bundleModule }, false);
+            if (result.Succeeded)
+            {
+                OnStartHotAssetsCallBack(bundleModule);
+                OnHotFinishCallBack(bundleModule);
+            }
+            else
+            {
+                Debug.LogError($"[{bundleModule}] 热更新事务失败：{result.Message}");
+            }
         }
         /// <summary>
         /// 热更完成回调

@@ -1,5 +1,6 @@
 using UnityEditor;
 using UnityEngine;
+using System;
 using System.Collections.Generic;
 using System.IO;
 
@@ -141,7 +142,8 @@ public partial class BuildWindows : EditorWindow
 
         GUI.Label(new Rect(x, panel.y + 143, 150, 18), "总体进度", ZMBuildStyles.SettingsLabel);
         GUI.Label(new Rect(panel.xMax - 156, panel.y + 143, 130, 18),
-            $"{ZMBuildProgress.CompletedJobs} / {ZMBuildProgress.TotalJobs} 模块", ZMBuildStyles.BuildProgressRightLabel);
+            //00 统一构建只有一个调度 Job，但可能包含多个 Business 与 Shared 模块，因此展示真实闭包计数。
+            $"{ZMBuildProgress.DisplayCompletedModules} / {ZMBuildProgress.DisplayTotalModules} 模块", ZMBuildStyles.BuildProgressRightLabel);
         DrawProgressBar(new Rect(x, panel.y + 166, contentWidth, 12), displayedOverallProgress, failed);
 
         GUI.Label(new Rect(x, panel.y + 191, 150, 18), "当前阶段", ZMBuildStyles.SettingsLabel);
@@ -252,12 +254,14 @@ public partial class BuildWindows : EditorWindow
         float closedX = position.width + 14;
         Rect drawerRect = new Rect(Mathf.Lerp(closedX, openX, progress), 78, width, position.height - 92);
         Event current = Event.current;
-        if (current.type == EventType.MouseDown && current.button == 0 && !drawerRect.Contains(current.mousePosition))
+        //00 确认弹窗打开时抽屉外点击由弹窗遮罩接管，不触发抽屉关闭，维持模态语义。
+        if (current.type == EventType.MouseDown && current.button == 0 && !drawerRect.Contains(current.mousePosition) && !moduleDrawer.IsConfirmDialogOpen)
         {
             moduleDrawer.Close();
             current.Use();
         }
-        moduleDrawer.Draw(drawerRect, Refresh);
+        //00 显式传入当前主窗口，抽屉弹出的独立下拉窗口不会夺走后续重绘目标。
+        moduleDrawer.Draw(this, drawerRect, Refresh);
         if (progress > .001f && progress < .999f) Repaint();
     }
 
@@ -600,6 +604,153 @@ public partial class BuildWindows : EditorWindow
     }
 }
 
+/// <summary>
+/// 00 集中绘制 Prefab 资源加载策略的双段选择器，两个配置入口共用完全一致的视觉和交互行为。
+/// </summary>
+internal static class PrefabDependencyEntryModeUi
+{
+    //00 静态文本数组只创建一次，避免抽屉动画和鼠标移动触发的高频 OnGUI 产生短命分配。
+    internal static readonly string[] OptionLabels = { "仅开放 Prefab", "开放 Prefab 及其依赖" };
+
+    /// <summary>
+    /// 00 使用同一 EditorWindow 内的双段按钮选择策略，不创建 Popup、不转移焦点，也不触发跨窗口 IMGUI 生命周期。
+    /// </summary>
+    /// <param name="currentMode">当前内存配置；未知值只用于安全显示，不会在用户未点击时被静默覆盖。</param>
+    /// <returns>用户本帧选择的新策略；没有点击时原样返回输入值。</returns>
+    internal static PrefabDependencyEntryMode DrawSelector(PrefabDependencyEntryMode currentMode)
+    {
+        //00 损坏配置只把显示位置限制到合法范围，构建门禁仍会明确拒绝未知枚举值。
+        int displayedIndex = Mathf.Clamp((int)currentMode, 0, OptionLabels.Length - 1);
+        //00 默认保留原始值，避免单纯打开窗口就悄悄修复或改变序列化配置。
+        PrefabDependencyEntryMode selectedMode = currentMode;
+        //00 整个策略压缩为一行普通配置项，避免再次形成类似主 Tab 的强视觉层级。
+        using (new EditorGUILayout.HorizontalScope(GUILayout.Height(26)))
+        {
+            //00 左侧只保留短标题，详细作用域由下方说明文字承担。
+            GUILayout.Label("资源加载策略", ZMBuildStyles.SettingsLabel, GUILayout.Width(88), GUILayout.Height(24));
+            //00 把紧凑选择器靠右放置，避免按钮横向铺满抽屉而显得过于突出。
+            GUILayout.FlexibleSpace();
+            //00 枚举稳定值与数组下标一一对应，因此点击后可以安全转换为配置值。
+            for (int index = 0; index < OptionLabels.Length; index++)
+            {
+                //00 使用低对比紧凑样式，选中状态只做轻量深蓝提示，不抢占页面主操作视觉。
+                GUIStyle style = index == displayedIndex
+                    ? ZMBuildStyles.CompactSegmentSelected
+                    : ZMBuildStyles.CompactSegment;
+                //00 第二项文字更长，分别使用 104px 和 156px，整体宽度固定为约 264px。
+                float optionWidth = index == 0 ? 104f : 156f;
+                //00 只有实际点击才更新结果；绘制过程本身不产生配置副作用或额外 Repaint。
+                if (GUILayout.Button(
+                        OptionLabels[index],
+                        style,
+                        GUILayout.Width(optionWidth),
+                        GUILayout.Height(24)))
+                    selectedMode = (PrefabDependencyEntryMode)index;
+                //00 中间只留 3px，保持两个值属于同一个配置项，同时避免背景视觉粘连。
+                if (index < OptionLabels.Length - 1) GUILayout.Space(3);
+            }
+        }
+
+        //00 返回本帧最终选择，调用方仍按原有保存按钮统一持久化。
+        return selectedMode;
+    }
+}
+
+/// <summary>
+/// 00 集中绘制模块角色并执行“最多一个 Shared”保存门禁，主抽屉和兼容窗口共用同一行为。
+/// </summary>
+internal static class BundleModuleRoleUi
+{
+    //00 角色名称保持短小，详细依赖方向由调用方附近的说明文字表达。
+    private static readonly string[] OptionLabels = { "业务模块", "共享模块" };
+
+    /// <summary>
+    /// 00 使用弱强调紧凑双段控件编辑模块角色，不创建 Popup 或额外窗口。
+    /// </summary>
+    internal static BundleModuleRole DrawSelector(BundleModuleRole currentRole)
+    {
+        //00 未知值只限制显示位置，保存和构建门禁仍会拒绝损坏配置。
+        int displayedIndex = Mathf.Clamp((int)currentRole, 0, OptionLabels.Length - 1);
+        //00 未点击时保留原始枚举，避免打开配置窗口就产生隐式迁移。
+        BundleModuleRole selectedRole = currentRole;
+        //00 角色和标题压缩在一行内，维持它作为辅助架构选项的视觉权重。
+        using (new EditorGUILayout.HorizontalScope(GUILayout.Height(26)))
+        {
+            //00 左侧标题与 Prefab 策略对齐。
+            GUILayout.Label("模块角色", ZMBuildStyles.SettingsLabel, GUILayout.Width(88), GUILayout.Height(24));
+            //00 选择器靠右，不占满基础信息卡片。
+            GUILayout.FlexibleSpace();
+            //00 两个互斥角色直接映射到稳定枚举值 0 和 1。
+            for (int index = 0; index < OptionLabels.Length; index++)
+            {
+                //00 复用统一紧凑样式，选中项只提供低饱和提示。
+                GUIStyle style = index == displayedIndex
+                    ? ZMBuildStyles.CompactSegmentSelected
+                    : ZMBuildStyles.CompactSegment;
+                //00 两项等宽，整体只有 179px，不会形成主导航视觉。
+                if (GUILayout.Button(OptionLabels[index], style, GUILayout.Width(88), GUILayout.Height(24)))
+                    selectedRole = (BundleModuleRole)index;
+                //00 3px 间距保持两个按钮属于同一字段。
+                if (index < OptionLabels.Length - 1) GUILayout.Space(3);
+            }
+        }
+
+        //00 返回内存选择，仍由配置窗口的保存按钮统一持久化。
+        return selectedRole;
+    }
+
+    /// <summary>
+    /// 00 验证当前保存结果不会让工程出现两个 Shared 模块。
+    /// </summary>
+    internal static bool ValidateSingleShared(
+        BuildBundleConfigura configuration,
+        BundleModuleData currentData,
+        BundleModuleRole selectedRole,
+        out string error)
+    {
+        //00 未知枚举不能静默保存，否则构建期依赖矩阵没有确定语义。
+        if (selectedRole != BundleModuleRole.Business && selectedRole != BundleModuleRole.Shared)
+        {
+            error = $"不支持的模块角色：{selectedRole}。";
+            return false;
+        }
+
+        //00 Business 不占用 Shared 唯一名额，可以直接保存。
+        if (selectedRole != BundleModuleRole.Shared)
+        {
+            error = string.Empty;
+            return true;
+        }
+
+        //00 新建空配置时没有其他模块，Shared 选择自然合法。
+        if (configuration?.AssetBundleConfig == null)
+        {
+            error = string.Empty;
+            return true;
+        }
+
+        //00 查找除当前编辑对象外的已有 Shared；名称比较忽略大小写以匹配输出目录语义。
+        foreach (BundleModuleData module in configuration.AssetBundleConfig)
+        {
+            //00 旧配置列表可能包含空槽，按未配置处理。
+            if (module == null || ReferenceEquals(module, currentData)) continue;
+            //00 同名对象可能是配置窗口复制出的编辑快照，也视为当前模块而不是第二个 Shared。
+            if (currentData != null &&
+                string.Equals(module.moduleName, currentData.moduleName, StringComparison.OrdinalIgnoreCase)) continue;
+            //00 找到其他 Shared 后立即给出具体模块名称。
+            if (module.moduleRole == BundleModuleRole.Shared)
+            {
+                error = $"当前版本最多允许一个共享模块；已存在共享模块“{module.moduleName}”。";
+                return false;
+            }
+        }
+
+        //00 没有第二个 Shared，允许调用方保存。
+        error = string.Empty;
+        return true;
+    }
+}
+
 internal class DarkDropdownWindow : EditorWindow
 {
     private string[] options;
@@ -608,6 +759,8 @@ internal class DarkDropdownWindow : EditorWindow
     private System.Action<int> onSelected;
     private Vector2 scroll;
     private bool showCheck;
+    //00 标记本次选择已经提交，防止 MouseDown、失焦和键盘事件在同一帧重复关闭或重复回调。
+    private bool isSelectionCommitted;
 
     internal static void Show(Rect anchor, string[] options, int selected, System.Action<int> onSelected, bool showCheck = true)
     {
@@ -624,7 +777,15 @@ internal class DarkDropdownWindow : EditorWindow
         window.Focus();
     }
 
-    private void OnLostFocus() => Close();
+    private void OnLostFocus()
+    {
+        //00 正在提交选择时，Select 已经接管关闭流程；失焦事件不能再次干预回调生命周期。
+        if (isSelectionCommitted) return;
+        //00 普通失焦代表用户取消下拉，主动断开回调引用，避免已关闭窗口继续持有宿主窗口。
+        onSelected = null;
+        //00 取消选择时直接关闭弹窗，不产生任何配置写入或宿主重绘。
+        Close();
+    }
 
     private void OnGUI()
     {
@@ -665,8 +826,22 @@ internal class DarkDropdownWindow : EditorWindow
 
     private void Select(int index)
     {
-        onSelected?.Invoke(index);
+        //00 IMGUI 同一输入可能同时触发按钮、失焦或键盘路径，只允许第一次提交生效。
+        if (isSelectionCommitted) return;
+        //00 在执行 Close 前先设置状态，因为关闭 Popup 可能同步触发 OnLostFocus。
+        isSelectionCommitted = true;
+        //00 防御性限制索引范围，避免未来动态选项或异常键盘状态把非法值传给配置层。
+        int committedIndex = Mathf.Clamp(index, 0, options.Length - 1);
+        //00 捕获一次性回调并立即清空窗口字段，关闭后不再保留宿主 EditorWindow 的引用链。
+        System.Action<int> selectionCallback = onSelected;
+        //00 清空字段还能保证任何重复事件都无法再次调用同一个业务回调。
+        onSelected = null;
+        //00 将配置更新推迟到当前 Popup 的 OnGUI 完整退出之后，避免同步 Repaint 宿主造成 IMGUI 布局重入和严重卡顿。
+        EditorApplication.delayCall += () => selectionCallback?.Invoke(committedIndex);
+        //00 选择已经进入延迟队列，当前帧只负责关闭临时窗口。
         Close();
+        //00 立即终止本次 Popup GUI，禁止窗口关闭后继续执行 EndScrollView 或后续布局代码。
+        GUIUtility.ExitGUI();
     }
 }
 
@@ -685,8 +860,8 @@ internal static class ZMBuildStyles
 
     internal static GUIStyle Title, Heading, Subtitle, Navigation, NavigationSelected, Badge;
     internal static GUIStyle CardTitle, CardMeta, Search, InputField, TextArea, FlatField, FieldBox, BadgeBox, CardBox, CardSelectedBox, AddCardBox, PrimaryButton, SecondaryButton, ToggleOn, ToggleOff, StatusLabel, SettingsPanel;
-    internal static GUIStyle SettingsCard, SettingsSectionTitle, SettingsHint, SettingsLabel, SettingsFieldHint, SettingsPopup, SwitchOn, SwitchOff, SwitchKnob, LinkButton, IconButton, CloseButton, CompactPrimaryButton, CompactSecondaryButton, PopupWindowBox, PopupHeaderBox, DropdownPanel, DropdownItem, DropdownItemSelected, DropdownCheck, CardEditButton;
-    internal static GUIStyle DrawerPanel, Segment, SegmentSelected, PathRow, PathIconButton, PathDeleteButton, AddPathBox, AddPathLabel, DrawerPlaceholder, RuleHelpButton, RuleHelpPanel, RuleHelpTitle, RuleHelpTitleSelected, RuleHelpDescription, RuleMarker, RuleMarkerSelected;
+    internal static GUIStyle SettingsCard, SettingsSectionTitle, SettingsHint, SettingsLabel, SettingsFieldHint, SettingsPopup, SwitchOn, SwitchOff, SwitchKnob, LinkButton, IconButton, CloseButton, CompactPrimaryButton, CompactSecondaryButton, CompactDangerButton, PopupWindowBox, PopupHeaderBox, DropdownPanel, DropdownItem, DropdownItemSelected, DropdownCheck, CardEditButton;
+    internal static GUIStyle DrawerPanel, Segment, SegmentSelected, CompactSegment, CompactSegmentSelected, PathRow, PathIconButton, PathDeleteButton, AddPathBox, AddPathLabel, DrawerPlaceholder, RuleHelpButton, RuleHelpPanel, RuleHelpTitle, RuleHelpTitleSelected, RuleHelpDescription, RuleMarker, RuleMarkerSelected;
     internal static GUIStyle BuildProgressPanel, BuildProgressTrack, BuildProgressFill, BuildProgressState, BuildProgressRightLabel, BuildLogPanel, BuildLogText;
     internal static GUIStyle BuildFailurePanel, BuildFailureTitle, BuildFailureSubtitle, BuildFailureLabel, BuildFailureDetail, BuildFailureFill, BuildFailureButton;
     private static Texture2D primaryTexture, primaryHoverTexture, secondaryTexture, secondaryHoverTexture;
@@ -747,6 +922,12 @@ internal static class ZMBuildStyles
         CloseButton = new GUIStyle(GUIStyle.none) { fontSize = 20, alignment = TextAnchor.MiddleCenter, normal = { textColor = Muted }, hover = { textColor = Color.white } };
         CompactPrimaryButton = new GUIStyle(PrimaryButton) { fixedHeight = 34, fontSize = 13 };
         CompactSecondaryButton = new GUIStyle(SecondaryButton) { fixedHeight = 34, fontSize = 13 };
+        //00 危险操作用红色按钮，删除确认弹窗专用；与主/次按钮同尺寸保持布局一致。
+        CompactDangerButton = Button(
+            RoundedTexture(24, 6, new Color32(176, 52, 52, 255), new Color32(176, 52, 52, 255), 0),
+            RoundedTexture(24, 6, new Color32(198, 62, 62, 255), new Color32(198, 62, 62, 255), 0),
+            Color.white, 13, FontStyle.Normal);
+        CompactDangerButton.fixedHeight = 34;
         PopupWindowBox = BoxStyle(RoundedTexture(32, 10, Window, new Color32(82, 91, 103, 255), 2), 11);
         PopupHeaderBox = BoxStyle(RoundedTexture(28, 8, Header, Header, 0), 9);
         DropdownPanel = BoxStyle(RoundedTexture(28, 8, new Color32(31, 34, 39, 255), new Color32(76, 82, 92, 255), 1), 9);
@@ -769,6 +950,24 @@ internal static class ZMBuildStyles
         Segment.fixedHeight = 34;
         SegmentSelected = Button(RoundedTexture(24, 6, new Color32(42, 137, 229, 255), new Color32(55, 155, 247, 255), 1), RoundedTexture(24, 6, new Color32(51, 149, 241, 255), Accent, 1), Color.white, 11, FontStyle.Bold);
         SegmentSelected.fixedHeight = 34;
+        //00 Prefab 策略使用更小、更弱的普通状态，避免和上方主规则 Tab 争夺视觉层级。
+        CompactSegment = Button(
+            RoundedTexture(20, 5, new Color32(31, 34, 39, 255), new Color32(53, 58, 66, 255), 1),
+            RoundedTexture(20, 5, new Color32(39, 43, 49, 255), new Color32(68, 75, 85, 255), 1),
+            new Color32(158, 164, 173, 255),
+            10,
+            FontStyle.Normal);
+        //00 固定 24px 高度，和普通配置行更接近，不再呈现大型导航按钮效果。
+        CompactSegment.fixedHeight = 24;
+        //00 选中态只使用低饱和深蓝和浅蓝文字，仍可辨识但不会像主按钮一样醒目。
+        CompactSegmentSelected = Button(
+            RoundedTexture(20, 5, new Color32(34, 53, 68, 255), new Color32(54, 91, 119, 255), 1),
+            RoundedTexture(20, 5, new Color32(38, 61, 79, 255), new Color32(65, 108, 139, 255), 1),
+            new Color32(157, 201, 232, 255),
+            10,
+            FontStyle.Normal);
+        //00 选中与未选中保持相同高度，切换时布局不会跳动。
+        CompactSegmentSelected.fixedHeight = 24;
         PathRow = new GUIStyle(BadgeBox) { padding = new RectOffset(10, 8, 8, 8) };
         PathIconButton = new GUIStyle(IconButton);
         PathIconButton.normal.background = RoundedTexture(24, 6, new Color32(45, 49, 56, 255), Border, 1);

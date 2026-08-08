@@ -1,3 +1,4 @@
+using System;
 using UnityEditor;
 using UnityEngine;
 
@@ -8,20 +9,24 @@ public class BundleModuleConfig : EditorWindow
         Prefab,
         RootFolder,
         SingleBundle,
+        SingleFile,
         Source
     }
 
     [SerializeField] private string moduleName;
     [SerializeField] private string originalModuleName;
     [SerializeField] private bool isAddressableAsset;
+    [SerializeField] private BundleModuleRole moduleRole;
+    [SerializeField] private PrefabDependencyEntryMode prefabDependencyEntryMode;
     [SerializeField] private string[] prefabPathArr = { "Path..." };
     [SerializeField] private string[] rootFolderPathArr = { };
     [SerializeField] private BundleFileInfo[] signFolderPathArr = { };
     [SerializeField] private string[] sourceFolderPathArr = { };
+    [SerializeField] private string[] singleFilePathArr = { };
     [SerializeField] private int selectedTab;
     [SerializeField] private Vector2 scrollPosition;
 
-    private static readonly string[] TabNames = { "预制体包", "文件夹子包", "单个补丁包", "源文件配置" };
+    private static readonly string[] TabNames = { "预制体包", "文件夹子包", "文件夹包", "单文件包", "源文件配置" };
 
     public static void ShowWindow(string targetModuleName)
     {
@@ -39,28 +44,49 @@ public class BundleModuleConfig : EditorWindow
         {
             moduleName = string.Empty;
             isAddressableAsset = false;
+            //00 新模块默认是普通业务模块，Shared 必须由开发者主动选择。
+            moduleRole = BundleModuleRole.Business;
+            //00 新模块默认只开放 Prefab，避免无意扩大可主动加载资源集合。
+            prefabDependencyEntryMode = PrefabDependencyEntryMode.PrefabOnly;
             prefabPathArr = new[] { "Path..." };
             rootFolderPathArr = new string[0];
             signFolderPathArr = new BundleFileInfo[0];
             sourceFolderPathArr = new string[0];
+            singleFilePathArr = new string[0];
         }
         else
         {
             moduleName = data.moduleName;
             isAddressableAsset = data.isAddressableAsset;
+            //00 旧配置没有该字段时读取枚举零值 Business。
+            moduleRole = data.moduleRole;
+            //00 旧序列化配置缺少字段时自动得到枚举零值，兼容现有工程。
+            prefabDependencyEntryMode = data.prefabDependencyEntryMode;
             prefabPathArr = data.prefabPathArr ?? new string[0];
             rootFolderPathArr = data.rootFolderPathArr ?? new string[0];
             signFolderPathArr = data.signFolderPathArr ?? new BundleFileInfo[0];
             sourceFolderPathArr = data.sourceFolderPathArr ?? new string[0];
+            singleFilePathArr = data.singleFilePathArr ?? new string[0];
         }
     }
 
     private void OnGUI()
     {
+        //00 独立配置窗口可能在主构建中心尚未打开时启动，必须主动初始化共享 ZMAsset 样式。
+        ZMBuildStyles.Ensure();
         EditorGUILayout.Space(8);
         moduleName = EditorGUILayout.TextField("资源模块名称", moduleName);
-        isAddressableAsset = EditorGUILayout.Toggle("是否可寻址资源", isAddressableAsset);
-        EditorGUILayout.HelpBox("可寻址资源会在使用时下载，建议在外围模块使用，并配合 Loading 表现。", MessageType.Info);
+        //00 兼容窗口复用主抽屉的紧凑角色控件，避免两个入口行为不一致。
+        moduleRole = BundleModuleRoleUi.DrawSelector(moduleRole);
+        //00 角色约束紧邻控件展示，不隐藏关键架构行为。
+        GUILayout.Label(
+            moduleRole == BundleModuleRole.Shared
+                ? "共享模块只能被业务模块依赖，当前版本最多允许一个。"
+                : "业务模块不能互相引用，但可以依赖唯一共享模块。",
+            ZMBuildStyles.SettingsFieldHint,
+            GUILayout.MinHeight(22));
+        isAddressableAsset = EditorGUILayout.Toggle("是否为远端资源", isAddressableAsset);
+        EditorGUILayout.HelpBox("远端资源会在首次使用时按需下载，本地文件校验有效时直接复用。", MessageType.Info);
         EditorGUILayout.Space(6);
 
         selectedTab = GUILayout.Toolbar(selectedTab, TabNames);
@@ -72,6 +98,8 @@ public class BundleModuleConfig : EditorWindow
             {
                 case PathType.Prefab:
                     DrawDescription("该文件夹下的所有预制体都会单独打成一个 AssetBundle");
+                    //00 一个策略统一控制当前模块 Prefab Tab 中配置的全部搜索目录。
+                    DrawPrefabDependencyMode();
                     DrawPathArray(ref prefabPathArr, "预制体资源路径");
                     break;
                 case PathType.RootFolder:
@@ -81,6 +109,10 @@ public class BundleModuleConfig : EditorWindow
                 case PathType.SingleBundle:
                     DrawDescription("指定的文件夹会单独打成一个 AssetBundle");
                     DrawBundleFileArray();
+                    break;
+                case PathType.SingleFile:
+                    DrawDescription("指定目录下的每个文件都会单独打成一个 AssetBundle");
+                    DrawPathArray(ref singleFilePathArr, "单文件包路径");
                     break;
                 case PathType.Source:
                     DrawDescription("指定文件夹下的所有源文件会复制到 AssetBundle 文件夹");
@@ -96,6 +128,24 @@ public class BundleModuleConfig : EditorWindow
     private static void DrawDescription(string text)
     {
         EditorGUILayout.HelpBox(text, MessageType.None);
+    }
+
+    /// <summary>
+    /// 00 在旧版独立配置窗口中复用 ZMAsset 暗色下拉控件，避免两个配置入口行为不一致。
+    /// </summary>
+    private void DrawPrefabDependencyMode()
+    {
+        //00 标题和紧凑双段控件绘制为同一行，独立窗口与主抽屉保持完全一致。
+        prefabDependencyEntryMode = PrefabDependencyEntryModeUi.DrawSelector(prefabDependencyEntryMode);
+        //00 动态提示说明 Entry 行为，不暗示 Bundle 分组发生变化。
+        GUILayout.Label(
+            prefabDependencyEntryMode == PrefabDependencyEntryMode.PrefabOnly
+                ? "仅 Prefab 可被业务代码按路径直接加载，递归依赖由 Bundle 内部使用。"
+                : "Prefab 与本模块拥有的递归依赖都可以按路径直接加载，Bundle 分组保持不变。",
+            ZMBuildStyles.SettingsFieldHint,
+            GUILayout.MinHeight(24));
+        //00 与后续路径列表只保留轻量间距，避免这个辅助选项形成独立大区块。
+        GUILayout.Space(5);
     }
 
     private static void DrawPathArray(ref string[] paths, string label)
@@ -127,7 +177,7 @@ public class BundleModuleConfig : EditorWindow
     private void DrawBundleFileArray()
     {
         signFolderPathArr ??= new BundleFileInfo[0];
-        GUILayout.Label("单个补丁包路径", EditorStyles.boldLabel);
+        GUILayout.Label("文件夹包路径", EditorStyles.boldLabel);
         for (int i = 0; i < signFolderPathArr.Length; i++)
         {
             signFolderPathArr[i] ??= new BundleFileInfo();
@@ -200,11 +250,27 @@ public class BundleModuleConfig : EditorWindow
 
         BundleModuleData data = BuildBundleConfigura.Instance.GetBundleDataByName(originalModuleName) ?? new BundleModuleData();
         data.moduleName = moduleName;
+        //00 与主抽屉执行同一单 Shared 门禁。
+        if (!BundleModuleRoleUi.ValidateSingleShared(
+                BuildBundleConfigura.Instance,
+                data,
+                moduleRole,
+                out string roleError))
+        {
+            EditorUtility.DisplayDialog("保存失败", roleError, "确定");
+            return;
+        }
+        //00 门禁成功后才写入角色，保存失败不会污染内存配置。
+        data.moduleRole = moduleRole;
         data.isAddressableAsset = isAddressableAsset;
+        //00 保存模块级统一 Prefab 资源加载策略，旧路径数组结构保持不变。
+        data.prefabDependencyEntryMode = prefabDependencyEntryMode;
         data.prefabPathArr = prefabPathArr;
         data.rootFolderPathArr = rootFolderPathArr;
         data.signFolderPathArr = signFolderPathArr;
         data.sourceFolderPathArr = sourceFolderPathArr;
+        //00 与主抽屉保持一致，过滤空白路径项后再持久化单文件包目录。
+        data.singleFilePathArr = RemoveEmptyPaths(singleFilePathArr);
         BuildBundleConfigura.Instance.SaveModuleData(data);
         CloseAndRefresh();
     }
@@ -213,6 +279,14 @@ public class BundleModuleConfig : EditorWindow
     {
         Close();
         BuildWindows.ShowAssetBundleWindow();
+    }
+
+    /// <summary>
+    /// 00 与主抽屉共用同一过滤语义，移除空白配置项。
+    /// </summary>
+    private static string[] RemoveEmptyPaths(string[] paths)
+    {
+        return Array.FindAll(paths ?? new string[0], path => !string.IsNullOrWhiteSpace(path));
     }
 
     private static string ToAbsoluteFolder(string path)

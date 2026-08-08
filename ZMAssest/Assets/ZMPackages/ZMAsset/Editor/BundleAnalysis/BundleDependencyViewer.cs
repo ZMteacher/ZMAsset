@@ -15,9 +15,9 @@ namespace ZM.Editor
     ///   Tab2 - 跨游戏依赖检测：检测某游戏的所有Bundle是否引用了其他游戏的资源（资源冗余检查）
     ///   Tab3 - 全局依赖总览：扫描所有游戏，汇总跨游戏依赖情况
     /// 
-    /// 原理：加载每个游戏的 AssetBundleManifest（StreamingAssets/AssetBundle/{GameName}/{Platform}），
-    ///        通过 AssetBundleManifest.GetAllDependencies() 获取完整依赖链，
-    ///        再按 Bundle 名前缀匹配是否属于其他游戏来判断跨游戏冗余。
+    /// 原理：优先加载每个模块已经发布的 bundleconfig AssetBundle，从配置协议 v2 还原 Bundle 依赖图。
+    ///        该协议携带“模块名 + Bundle 名”的完整身份，因此能够正确表达 GameOne → Shared 等跨模块依赖。
+    ///        为兼容历史构建目录，找不到配置 Bundle 时才回退读取旧版 Unity AssetBundleManifest。
     /// </summary>
     public partial class BundleDependencyViewer : EditorWindow
     {
@@ -286,58 +286,221 @@ namespace ZM.Editor
 
         private GameManifestData LoadOrGetManifest(string gameName)
         {
-            string cacheKey = $"{gameName}_{Platforms[_platformIdx]}";
+            //00 配置 Bundle 的内容随平台和模块变化；缓存键必须同时包含二者，避免切换平台后复用旧结果。
+            string platform = Platforms[_platformIdx];
+            string cacheKey = $"{gameName}_{platform}_DependencyGraph";
             if (_cache.TryGetValue(cacheKey, out var cached)) return cached;
 
-            string platform = Platforms[_platformIdx];
-            string manifestPath = Path.Combine(AbRootFullPath, gameName, platform);
-            if (!File.Exists(manifestPath))
+            //00 统一构建会在每个模块目录发布 <模块小写>bundleconfig<后缀>。
+            //00 与热更新 JSON 相比，该 Bundle 才保存每个资源所属 Bundle 及 BundleDependencies，适合作为分析数据源。
+            GameManifestData configData = TryLoadPublishedConfigDependencyGraph(gameName);
+            if (configData != null)
             {
-                Debug.LogWarning($"[BundleDependencyViewer] Manifest 不存在: {manifestPath}");
+                _cache[cacheKey] = configData;
+                return configData;
+            }
+
+            //00 旧项目可能尚未发布配置 Bundle，保留历史 Unity Manifest 读取作为只读兼容后备。
+            GameManifestData legacyData = TryLoadLegacyUnityManifest(gameName, platform);
+            if (legacyData != null)
+            {
+                _cache[cacheKey] = legacyData;
+                return legacyData;
+            }
+
+            Debug.LogWarning(
+                $"[BundleDependencyViewer] 无法为模块 [{gameName}] 建立依赖图。" +
+                $"未找到可读取的配置 Bundle 或旧版 Unity Manifest；请先构建该模块，并确认目录为：" +
+                $"{Path.Combine(AbRootFullPath, gameName)}");
+            return null;
+        }
+
+        /// <summary>
+        /// 00 从当前构建流程发布的模块配置 Bundle 读取依赖图。
+        /// 00 配置记录的是直接依赖，本方法再在内存中计算传递依赖，避免依赖旧版 Manifest 文件。
+        /// </summary>
+        private GameManifestData TryLoadPublishedConfigDependencyGraph(string gameName)
+        {
+            //00 构建端 GenerateBundleBuilder 使用相同命名规则；这里必须保持一致，避免大小写和后缀差异导致找不到文件。
+            string configBundleName = gameName.ToLowerInvariant() + "bundleconfig" + BundleSettings.Instance.ABSUFFIX;
+            string configBundlePath = Path.Combine(AbRootFullPath, gameName, configBundleName);
+            if (!File.Exists(configBundlePath)) return null;
+
+            //00 加密 Bundle 无法被编辑器 AssetBundle.LoadFromFile 直接解析，给出明确诊断而不是让 Unity 输出模糊错误。
+            if (!IsValidAssetBundle(configBundlePath))
+            {
+                Debug.LogWarning($"[BundleDependencyViewer] 配置 Bundle 文件头无效（可能已加密）：{configBundlePath}");
                 return null;
             }
 
-            if (!IsValidAssetBundle(manifestPath))
-            {
-                Debug.LogWarning($"[BundleDependencyViewer] Manifest 文件头无效（可能被加密）: {manifestPath}");
-                return null;
-            }
-
-            AssetBundle bundle = null;
+            AssetBundle configBundle = null;
             try
             {
-                bundle = AssetBundle.LoadFromFile(manifestPath);
-                if (bundle == null)
+                configBundle = AssetBundle.LoadFromFile(configBundlePath);
+                if (configBundle == null)
                 {
-                    Debug.LogWarning($"[BundleDependencyViewer] 加载 AssetBundle 失败: {manifestPath}");
+                    Debug.LogWarning($"[BundleDependencyViewer] 加载配置 Bundle 失败：{configBundlePath}");
                     return null;
                 }
 
-                var manifest = bundle.LoadAsset<AssetBundleManifest>("AssetBundleManifest");
-                if (manifest == null)
+                //00 配置 Bundle 只应包含模块配置 JSON；使用 LoadAllAssets 可规避 Unity 对 TextAsset 内部资源名的大小写差异。
+                TextAsset configAsset = configBundle.LoadAllAssets<TextAsset>()
+                    .FirstOrDefault(asset => asset != null && !string.IsNullOrWhiteSpace(asset.text));
+                if (configAsset == null)
                 {
-                    Debug.LogWarning($"[BundleDependencyViewer] 找不到 AssetBundleManifest 资产: {manifestPath}");
+                    Debug.LogWarning($"[BundleDependencyViewer] 配置 Bundle 中找不到有效的配置 JSON：{configBundlePath}");
                     return null;
                 }
 
-                var data = new GameManifestData();
-                foreach (var bundleName in manifest.GetAllAssetBundles())
+                //00 JsonUtility 与构建端配置字段一一对应，不引入额外编辑器依赖；反序列化失败会落入 catch 并保留错误上下文。
+                BundleConfig config = JsonUtility.FromJson<BundleConfig>(configAsset.text);
+                if (config?.bundleInfoList == null)
                 {
-                    data.DirectDeps[bundleName]  = manifest.GetDirectDependencies(bundleName);
-                    data.AllDeps[bundleName]      = manifest.GetAllDependencies(bundleName);
+                    Debug.LogWarning($"[BundleDependencyViewer] 配置 JSON 缺少 bundleInfoList：{configBundlePath}");
+                    return null;
                 }
-                _cache[cacheKey] = data;
-                return data;
+
+                return CreateDependencyGraphFromBundleConfig(config, gameName);
             }
             catch (Exception e)
             {
-                Debug.LogError($"[BundleDependencyViewer] 加载 Manifest 异常: {e.Message}");
+                Debug.LogError($"[BundleDependencyViewer] 读取模块 [{gameName}] 的配置 Bundle 时发生异常：{e.Message}");
                 return null;
             }
             finally
             {
-                bundle?.Unload(true);
+                configBundle?.Unload(true);
             }
+        }
+
+        /// <summary>
+        /// 00 根据配置协议 v2 建立“Bundle → 直接依赖 / 全部传递依赖”的只读分析视图。
+        /// 00 同一 Bundle 可承载多个资源，因此必须合并其每条资源记录的依赖，不能只取第一条。
+        /// </summary>
+        private static GameManifestData CreateDependencyGraphFromBundleConfig(BundleConfig config, string moduleName)
+        {
+            var directDependencySets = new Dictionary<string, HashSet<string>>(StringComparer.OrdinalIgnoreCase);
+
+            foreach (BundleInfo bundleInfo in config.bundleInfoList)
+            {
+                //00 空 Bundle 名无法映射到物理文件，属于损坏配置；跳过该项并让其余可用 Bundle 继续可视化。
+                if (bundleInfo == null || string.IsNullOrWhiteSpace(bundleInfo.bundleName)) continue;
+
+                if (!directDependencySets.TryGetValue(bundleInfo.bundleName, out HashSet<string> dependencies))
+                {
+                    dependencies = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                    directDependencySets.Add(bundleInfo.bundleName, dependencies);
+                }
+
+                //00 v2 是正式协议，包含跨模块依赖的 Bundle 文件名；分析视图以物理文件名为图节点。
+                if (bundleInfo.bundleDependencies != null)
+                {
+                    foreach (BundleDependencyInfo dependency in bundleInfo.bundleDependencies)
+                    {
+                        if (dependency != null && !string.IsNullOrWhiteSpace(dependency.bundleName) &&
+                            !string.Equals(dependency.bundleName, bundleInfo.bundleName, StringComparison.OrdinalIgnoreCase))
+                            dependencies.Add(dependency.bundleName);
+                    }
+                }
+
+                //00 旧配置只有同模块字符串依赖。即便 v2 列表存在也一并合并，兼容过渡期间的部分升级配置。
+                if (bundleInfo.bundleDependce != null)
+                {
+                    foreach (string dependencyName in bundleInfo.bundleDependce)
+                    {
+                        if (!string.IsNullOrWhiteSpace(dependencyName) &&
+                            !string.Equals(dependencyName, bundleInfo.bundleName, StringComparison.OrdinalIgnoreCase))
+                            dependencies.Add(dependencyName);
+                    }
+                }
+            }
+
+            var data = new GameManifestData();
+            foreach (KeyValuePair<string, HashSet<string>> pair in directDependencySets)
+            {
+                //00 排序让 UI、导出结果与测试输出不受字典遍历顺序影响。
+                data.DirectDeps[pair.Key] = pair.Value.OrderBy(name => name, StringComparer.OrdinalIgnoreCase).ToArray();
+            }
+
+            foreach (string bundleName in data.DirectDeps.Keys)
+            {
+                //00 逐 Bundle 使用独立 visited 集，循环依赖即使出现也不会造成无限递归或把自身写入依赖列表。
+                var allDependencies = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                CollectTransitiveDependencies(bundleName, data.DirectDeps, allDependencies);
+                allDependencies.Remove(bundleName);
+                data.AllDeps[bundleName] = allDependencies.OrderBy(name => name, StringComparer.OrdinalIgnoreCase).ToArray();
+            }
+
+            Debug.Log($"[BundleDependencyViewer] 已从 [{moduleName}] 的配置 Bundle 建立依赖图：{data.DirectDeps.Count} 个 Bundle。");
+            return data;
+        }
+
+        /// <summary>
+        /// 00 深度优先收集配置中的所有传递依赖；缺失节点保留为叶子，便于显示外部模块的物理 Bundle 依赖。
+        /// </summary>
+        private static void CollectTransitiveDependencies(
+            string bundleName,
+            IReadOnlyDictionary<string, string[]> directDependencies,
+            ISet<string> collectedDependencies)
+        {
+            if (!directDependencies.TryGetValue(bundleName, out string[] dependencies)) return;
+
+            foreach (string dependencyName in dependencies)
+            {
+                if (!collectedDependencies.Add(dependencyName)) continue;
+                CollectTransitiveDependencies(dependencyName, directDependencies, collectedDependencies);
+            }
+        }
+
+        /// <summary>
+        /// 00 兼容早期构建输出：只有未发布配置 Bundle 时才尝试读取 Unity AssetBundleManifest。
+        /// </summary>
+        private GameManifestData TryLoadLegacyUnityManifest(string gameName, string platform)
+        {
+            string moduleDirectory = Path.Combine(AbRootFullPath, gameName);
+            string[] candidates =
+            {
+                //00 原依赖查看器的历史产物路径：<模块目录>/<平台>，优先保留该兼容入口。
+                Path.Combine(moduleDirectory, platform),
+                //00 少数旧工程采用“目录同名文件”保存 Unity Manifest。
+                Path.Combine(moduleDirectory, gameName),
+                //00 以下两个命名兼容更早的热更目录约定；JSON 文件会被文件头校验安全跳过。
+                Path.Combine(moduleDirectory, $"{gameName}AssetsHotManifest_{platform}"),
+                Path.Combine(moduleDirectory, "AssetsHotManifest_", platform)
+            };
+
+            foreach (string manifestPath in candidates)
+            {
+                if (!File.Exists(manifestPath) || !IsValidAssetBundle(manifestPath)) continue;
+
+                AssetBundle manifestBundle = null;
+                try
+                {
+                    manifestBundle = AssetBundle.LoadFromFile(manifestPath);
+                    AssetBundleManifest manifest = manifestBundle?.LoadAsset<AssetBundleManifest>("AssetBundleManifest");
+                    if (manifest == null) continue;
+
+                    var data = new GameManifestData();
+                    foreach (string bundleName in manifest.GetAllAssetBundles())
+                    {
+                        data.DirectDeps[bundleName] = manifest.GetDirectDependencies(bundleName);
+                        data.AllDeps[bundleName] = manifest.GetAllDependencies(bundleName);
+                    }
+
+                    Debug.Log($"[BundleDependencyViewer] 已从旧版 Manifest 建立 [{gameName}] 的依赖图：{data.DirectDeps.Count} 个 Bundle。");
+                    return data;
+                }
+                catch (Exception e)
+                {
+                    Debug.LogWarning($"[BundleDependencyViewer] 读取旧版 Manifest 失败：{manifestPath}，原因：{e.Message}");
+                }
+                finally
+                {
+                    manifestBundle?.Unload(true);
+                }
+            }
+
+            return null;
         }
 
         private void InvalidateAllResults()
@@ -946,7 +1109,7 @@ namespace ZM.Editor
                     DrawWelcomeStepDivider();
                     DrawWelcomeStep("2", "添加游戏模块", "填写模块名与对应子目录");
                     DrawWelcomeStepDivider();
-                    DrawWelcomeStep("3", "保存并分析", "自动加载 Manifest 数据");
+                    DrawWelcomeStep("3", "保存并分析", "自动加载模块依赖配置");
                 }
             }
         }
@@ -1079,7 +1242,7 @@ namespace ZM.Editor
         {
             string[] lines = {
                 "✔  各游戏模块已打包 AssetBundle 到  StreamingAssets/AssetBundle/<模块名>/  目录",
-                "✔  每个模块目录内包含与目录同名的 Manifest 文件（无后缀）",
+                "✔  每个模块目录内包含 <模块名小写>bundleconfig<后缀> 配置 Bundle（新构建流程自动生成）",
                 "✔  点击右上角  ⚙ 设置  填写 AB 根目录路径并添加游戏模块，即可解锁全部功能",
             };
             var style = new GUIStyle(_checkItem) { normal = { textColor = textColor }, fontSize = 12 };

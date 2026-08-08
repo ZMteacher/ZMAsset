@@ -1,4 +1,4 @@
-﻿/*---------------------------------------------------------------------------------------------------------------------------------------------
+/*---------------------------------------------------------------------------------------------------------------------------------------------
 *
 * Title: ZMAsset
 *
@@ -40,9 +40,9 @@ namespace ZM.ZMAsset
         /// </summary>
         public string assetName;
         /// <summary>
-        /// 是否寻址资源
+        /// 是否允许在本地缺失时从远端按需下载
         /// </summary>
-        public bool isAddressableAsset;
+        public bool isRemoteAsset;
         /// <summary>
         /// AssetBundle所属的模块
         /// </summary>
@@ -51,6 +51,10 @@ namespace ZM.ZMAsset
         /// AssetBundle依赖项
         /// </summary>
         public List<string> bundleDependce;
+        /// <summary>
+        /// 协议版本 2 的完整依赖身份；加载与释放必须优先使用模块名和 Bundle 名组合键。
+        /// </summary>
+        public List<ModuleBundleKey> bundleDependencies;
         /// <summary>
         /// AssetBundle
         /// </summary>
@@ -64,8 +68,9 @@ namespace ZM.ZMAsset
         /// </summary>
         public UnityEngine.Object[] objArr;
         /// <summary>
-        /// 引用计数
+        /// 主资源缓存持有状态，仅允许 0（未持有）或 1（已持有）
         /// </summary>
+        //00 GameObject 实例数量由 ResourceManager 的实例索引维护，不再混入该字段。
         public int refCount;
     }
 
@@ -110,7 +115,8 @@ namespace ZM.ZMAsset
         /// <summary>
         /// 所有模块的已经加载过的AssetBundle的资源对象字典
         /// </summary>
-        private Dictionary<string, AssetBundleCache> mAllAlreadyLoadBundleDic = new Dictionary<string, AssetBundleCache>();
+        private readonly Dictionary<ModuleBundleKey, AssetBundleCache> mAllAlreadyLoadBundleDic =
+            new Dictionary<ModuleBundleKey, AssetBundleCache>();
  
         /// <summary>
         /// AssetBundle类对象池
@@ -119,16 +125,17 @@ namespace ZM.ZMAsset
         /// </summary>
         /// 异步加载AssetBundle字典
         /// </summary>
-        private Dictionary<string,UniTaskCompletionSource> mAsyncLoadBundleActionDic = new Dictionary<string, UniTaskCompletionSource>();
+        private readonly Dictionary<ModuleBundleKey, UniTaskCompletionSource> mAsyncLoadBundleActionDic =
+            new Dictionary<ModuleBundleKey, UniTaskCompletionSource>();
         /// <summary>
         /// 按资源 CRC 合并 BundleItem 初始化，避免同一资源并发请求重复持有底层 Bundle。
         /// </summary>
         private readonly Dictionary<uint, UniTaskCompletionSource<BundleItem>> mAsyncLoadBundleItemActionDic =
             new Dictionary<uint, UniTaskCompletionSource<BundleItem>>();
         /// <summary>
-        /// 可寻址资源先合并下载阶段，再进入统一的 BundleItem 初始化入口。
+        /// 远端资源先合并下载阶段，再进入统一的 BundleItem 初始化入口。
         /// </summary>
-        private readonly Dictionary<uint, UniTaskCompletionSource<BundleItem>> mAsyncLoadAddressableItemActionDic =
+        private readonly Dictionary<uint, UniTaskCompletionSource<BundleItem>> mRemoteBundleLoadTasks =
             new Dictionary<uint, UniTaskCompletionSource<BundleItem>>();
       
         /// <summary>
@@ -136,9 +143,34 @@ namespace ZM.ZMAsset
         /// </summary>
         private readonly object mLock = new object();
         /// <summary>
-        /// 配置初始化和热重载共用一个异步写锁，避免不同模块在等待 IO 时交叉占用 CRC 映射。
+        /// 配置初始化、热重载和模块清理共用一个异步写锁。
         /// </summary>
-        private readonly SemaphoreSlim mConfigurationMutationLock = new SemaphoreSlim(1, 1);
+        //00 这里只重命名现有锁并扩展职责，严禁为模块清理另建第二把锁。
+        private readonly SemaphoreSlim mModuleMutationLock = new SemaphoreSlim(1, 1);
+
+        private readonly HashSet<string> mModulesBeingCleared =
+            new HashSet<string>(StringComparer.Ordinal);
+
+        private readonly Dictionary<string, int> mModuleInFlightLoadCountDic =
+            new Dictionary<string, int>(StringComparer.Ordinal);
+
+        /// <summary>
+        /// 00 消费模块到直接依赖模块的配置图；图关系在模块初始化提交时一次性替换。
+        /// </summary>
+        private readonly Dictionary<string, HashSet<string>> mModuleDependencies =
+            new Dictionary<string, HashSet<string>>(StringComparer.Ordinal);
+
+        /// <summary>
+        /// 00 依赖模块到当前活动消费者的租约反向图；Shared 清理依据它拒绝提前释放。
+        /// </summary>
+        private readonly Dictionary<string, HashSet<string>> mActiveModuleDependents =
+            new Dictionary<string, HashSet<string>>(StringComparer.Ordinal);
+
+        /// <summary>
+        /// 00 标记当前已取得全部依赖租约的模块；成功清理会停用，下一次资源操作再原子激活。
+        /// </summary>
+        private readonly HashSet<string> mActiveModuleLeases =
+            new HashSet<string>(StringComparer.Ordinal);
 
         #region 资源清单配置初始化
         /// <summary>
@@ -152,113 +184,410 @@ namespace ZM.ZMAsset
             }
         }
 
+        internal bool TryBeginModuleLoad(string bundleModule)
+        {
+            if (string.IsNullOrWhiteSpace(bundleModule)) return true;
+            lock (mLock)
+            {
+                if (mModulesBeingCleared.Contains(bundleModule)) return false;
+                // 清理成功后的业务模块仍保留配置；首次新加载必须先原子恢复全部 Shared 租约。
+                if (!TryActivateModuleLeaseLocked(bundleModule, out string activationError))
+                {
+                    Debug.LogError($"模块 {bundleModule} 无法恢复依赖租约：{activationError}");
+                    return false;
+                }
+                mModuleInFlightLoadCountDic.TryGetValue(bundleModule, out int count);
+                mModuleInFlightLoadCountDic[bundleModule] = count + 1;
+                return true;
+            }
+        }
+
+        internal void EndModuleLoad(string bundleModule)
+        {
+            if (string.IsNullOrWhiteSpace(bundleModule)) return;
+            lock (mLock)
+            {
+                if (!mModuleInFlightLoadCountDic.TryGetValue(bundleModule, out int count)) return;
+                if (count <= 1) mModuleInFlightLoadCountDic.Remove(bundleModule);
+                else mModuleInFlightLoadCountDic[bundleModule] = count - 1;
+            }
+        }
+
+        /// <summary>
+        /// 获取模块变更锁并原子进入 Clearing；成功后必须调用 EndModuleClear。
+        /// </summary>
+        internal async UniTask<ModuleClearStatus> BeginModuleClearAsync(string bundleModule)
+        {
+            if (string.IsNullOrWhiteSpace(bundleModule)) return ModuleClearStatus.InvalidModule;
+
+            await mModuleMutationLock.WaitAsync();
+            try
+            {
+                await UniTask.SwitchToMainThread();
+                lock (mLock)
+                {
+                    if (!mAlreadyLoadBundleModuleList.Contains(bundleModule))
+                    {
+                        mModuleMutationLock.Release();
+                        return ModuleClearStatus.NotInitialized;
+                    }
+                    //00 Shared 仍被活动业务模块租用时禁止清理，避免已加载材质/纹理在消费者运行中变白。
+                    if (HasActiveDependentsLocked(bundleModule))
+                    {
+                        mModuleMutationLock.Release();
+                        return ModuleClearStatus.DependencyInUse;
+                    }
+                    if (mModulesBeingCleared.Contains(bundleModule) ||
+                        (mModuleInFlightLoadCountDic.TryGetValue(bundleModule, out int count) && count > 0) ||
+                        HasModuleAsyncLoad(bundleModule))
+                    {
+                        mModuleMutationLock.Release();
+                        return ModuleClearStatus.Busy;
+                    }
+
+                    mModulesBeingCleared.Add(bundleModule);
+                    return ModuleClearStatus.Success;
+                }
+            }
+            catch
+            {
+                //00 主线程切换或预检异常时必须归还同一把模块变更锁，避免后续初始化和重载永久阻塞。
+                mModuleMutationLock.Release();
+                throw;
+            }
+        }
+
+        internal void EndModuleClear(string bundleModule)
+        {
+            lock (mLock)
+            {
+                mModulesBeingCleared.Remove(bundleModule);
+            }
+            mModuleMutationLock.Release();
+        }
+
+        private bool HasModuleAsyncLoad(string bundleModule)
+        {
+            //00 异步任务字典与加载、清理和重载流程并发读写，遍历必须持有同一把状态锁。
+            lock (mLock)
+            {
+                foreach (uint crc in mAsyncLoadBundleItemActionDic.Keys)
+                {
+                    if (mAllBundleAssetDic.TryGetValue(crc, out BundleItem item) &&
+                        string.Equals(item.bundleModuleType, bundleModule, StringComparison.Ordinal)) return true;
+                }
+                foreach (uint crc in mRemoteBundleLoadTasks.Keys)
+                {
+                    if (mAllBundleAssetDic.TryGetValue(crc, out BundleItem item) &&
+                        string.Equals(item.bundleModuleType, bundleModule, StringComparison.Ordinal)) return true;
+                }
+                foreach (ModuleBundleKey bundleKey in mAsyncLoadBundleActionDic.Keys)
+                {
+                    //00 Bundle 异步任务已经携带模块身份，可直接判断而不再扫描全部资源配置。
+                    if (string.Equals(bundleKey.ModuleName, bundleModule, StringComparison.Ordinal)) return true;
+                }
+                return false;
+            }
+        }
+
+        /// <summary>
+        /// 00 在 mLock 内原子取得当前模块的全部直接依赖租约。
+        /// </summary>
+        private bool TryActivateModuleLeaseLocked(string bundleModule, out string error)
+        {
+            error = string.Empty;
+            //00 未初始化模块没有可恢复的依赖图；调用方可能处于 Editor 直读兼容路径，保持原行为。
+            if (!mAlreadyLoadBundleModuleList.Contains(bundleModule)) return true;
+            //00 已经活动时不重复增加反向依赖者，模块租约是 0/1 状态而不是计数器。
+            if (mActiveModuleLeases.Contains(bundleModule)) return true;
+            //00 无依赖模块同样标记活动，清理成功后才能一致地进入停用状态。
+            if (!mModuleDependencies.TryGetValue(bundleModule, out HashSet<string> dependencies) ||
+                dependencies.Count == 0)
+            {
+                mActiveModuleLeases.Add(bundleModule);
+                return true;
+            }
+
+            //00 必须先验证全部依赖均已初始化且不在清理，再一次性写入反向图，禁止半取得租约。
+            foreach (string dependencyModule in dependencies)
+            {
+                if (!mAlreadyLoadBundleModuleList.Contains(dependencyModule))
+                {
+                    error = $"依赖模块尚未初始化：{dependencyModule}";
+                    return false;
+                }
+                if (mModulesBeingCleared.Contains(dependencyModule))
+                {
+                    error = $"依赖模块正在清理：{dependencyModule}";
+                    return false;
+                }
+            }
+            foreach (string dependencyModule in dependencies)
+            {
+                if (!mActiveModuleDependents.TryGetValue(
+                        dependencyModule,
+                        out HashSet<string> dependents))
+                {
+                    dependents = new HashSet<string>(StringComparer.Ordinal);
+                    mActiveModuleDependents.Add(dependencyModule, dependents);
+                }
+                dependents.Add(bundleModule);
+            }
+            mActiveModuleLeases.Add(bundleModule);
+            return true;
+        }
+
+        /// <summary>
+        /// 00 在 mLock 内释放当前模块取得的全部依赖租约；重复停用不会重复减租约。
+        /// </summary>
+        private void DeactivateModuleLeaseLocked(string bundleModule)
+        {
+            if (!mActiveModuleLeases.Remove(bundleModule)) return;
+            if (!mModuleDependencies.TryGetValue(bundleModule, out HashSet<string> dependencies)) return;
+            foreach (string dependencyModule in dependencies)
+            {
+                if (!mActiveModuleDependents.TryGetValue(
+                        dependencyModule,
+                        out HashSet<string> dependents)) continue;
+                dependents.Remove(bundleModule);
+                if (dependents.Count == 0) mActiveModuleDependents.Remove(dependencyModule);
+            }
+        }
+
+        /// <summary>
+        /// 00 成功清理业务资源后停用模块租约；调用时 BeginModuleClear 仍持有模块变更锁。
+        /// </summary>
+        internal void DeactivateModuleAfterClear(string bundleModule)
+        {
+            lock (mLock)
+            {
+                DeactivateModuleLeaseLocked(bundleModule);
+            }
+        }
+
+        /// <summary>
+        /// 00 全局深度清理成功后停用全部模块租约；配置仍保留，下一次加载会按需重新激活。
+        /// </summary>
+        internal void DeactivateAllModulesAfterGlobalClear()
+        {
+            lock (mLock)
+            {
+                //00 复制集合后逐个停用，避免 Deactivate 修改 mActiveModuleLeases 时破坏枚举器。
+                List<string> activeModules = new List<string>(mActiveModuleLeases);
+                foreach (string moduleName in activeModules) DeactivateModuleLeaseLocked(moduleName);
+            }
+        }
+
+        /// <summary>
+        /// 00 判断目标模块当前是否仍被活动消费者租用。
+        /// </summary>
+        private bool HasActiveDependentsLocked(string bundleModule)
+        {
+            return mActiveModuleDependents.TryGetValue(bundleModule, out HashSet<string> dependents) &&
+                   dependents.Count > 0;
+        }
+
+        /// <summary>
+        /// 00 判断是否仍有已初始化模块声明依赖目标模块；模块卸载和重载使用更严格的配置级门禁。
+        /// </summary>
+        private bool HasInitializedDependentsLocked(string bundleModule, out string dependentModules)
+        {
+            List<string> dependents = new List<string>();
+            foreach (KeyValuePair<string, HashSet<string>> pair in mModuleDependencies)
+            {
+                if (mAlreadyLoadBundleModuleList.Contains(pair.Key) && pair.Value.Contains(bundleModule))
+                    dependents.Add(pair.Key);
+            }
+            dependents.Sort(StringComparer.Ordinal);
+            dependentModules = string.Join(", ", dependents);
+            return dependents.Count > 0;
+        }
+
+        /// <summary>
+        /// 00 热更新磁盘切换前查询模块是否允许变更配置；有已初始化消费者时必须拒绝 Shared 在线升级。
+        /// </summary>
+        internal bool CanMutateModuleConfiguration(string bundleModule, out string reason)
+        {
+            lock (mLock)
+            {
+                if (HasInitializedDependentsLocked(bundleModule, out string dependents))
+                {
+                    reason = $"模块 {bundleModule} 仍被已初始化模块依赖：{dependents}";
+                    return false;
+                }
+                reason = string.Empty;
+                return true;
+            }
+        }
+
         /// <summary>
         /// 加载AssetBundle配置文件
         /// </summary>
         /// <param name="bundleModule">资源模块</param>
-        /// <param name="isAddressModule">是否寻址资源</param>
         /// <returns></returns>
-        public async UniTask<bool> InitAssetModule(string bundleModule)
+        public async UniTask<bool> InitializeAssetModule(string bundleModule)
         {
-            await mConfigurationMutationLock.WaitAsync();
+            await mModuleMutationLock.WaitAsync();
             try
             {
                 // Unity AssetBundle API 必须回到主线程执行，等待写锁后显式恢复线程归属。
                 await UniTask.SwitchToMainThread();
-                return await InitAssetModuleInternal(bundleModule);
+                return await InitializeAssetModuleInternal(bundleModule);
             }
             finally
             {
-                mConfigurationMutationLock.Release();
+                mModuleMutationLock.Release();
             }
         }
 
-        private async UniTask<bool> InitAssetModuleInternal(string bundleModule)
+        private async UniTask<bool> InitializeAssetModuleInternal(string bundleModule)
         {
-            Debug.Log("InitAssetModule :"+bundleModule);
+            //00 整个依赖闭包共享访问集合和新增模块列表，递归初始化不会再次获取 mModuleMutationLock。
+            HashSet<string> visitingModules = new HashSet<string>(StringComparer.Ordinal);
+
+            List<string> newlyInitializedModules = new List<string>();
+
+            bool succeeded = await InitializeAssetModuleRecursive(bundleModule, visitingModules, newlyInitializedModules);
+
+            if (succeeded) return true;
+            //任一依赖或主模块失败时按相反顺序撤销本轮新提交配置和租约，保持全有或全无。
+            lock (mLock)
+            {
+                for (int index = newlyInitializedModules.Count - 1; index >= 0; index--)
+                    RemoveModuleConfigurationLocked(newlyInitializedModules[index]);
+            }
+            return false;
+        }
+
+        /// <summary>
+        /// 00 在已持有模块变更锁的前提下递归初始化依赖闭包；本方法绝不再次等待同一 SemaphoreSlim。
+        /// </summary>
+        private async UniTask<bool> InitializeAssetModuleRecursive(string bundleModule, HashSet<string> visitingModules, List<string> newlyInitializedModules)
+        {
+            Debug.Log($"InitializeAssetModuleRecursive :{bundleModule}");
             AssetBundle bundleConfig = null;
             try
             {
+                //00 模块名称是目录、图节点和 BundleKey 的共同身份，入口统一 Trim 并拒绝空值。
+                bundleModule = bundleModule?.Trim();
+                if (string.IsNullOrWhiteSpace(bundleModule))
+                    throw new InvalidDataException("初始化 AssetBundle 模块时模块名称不能为空。");
                 lock (mLock)
                 {
                     if (mAlreadyLoadBundleModuleList.Contains(bundleModule))
                     {
-                        Debug.LogWarning("该模块配置文件已经加载：" + bundleModule);
-                        return false;
+                        //0依赖递归和重复业务初始化都采用幂等成功，避免初始化顺序改变结果。
+                        Debug.Log("该模块配置文件已经加载：" + bundleModule);
+                        return true;
                     }
                 }
+                //00 visiting 集合在读取磁盘前检测循环，诊断中输出当前闭包而不是最终栈溢出。
+                if (!visitingModules.Add(bundleModule))
+                    throw new InvalidDataException($"模块依赖图存在循环：{string.Join(" -> ", visitingModules)} -> {bundleModule}");
+
                 //处理异步时多个配置同时初始化，导致字段数据错乱问题
                 string assetBundleName = bundleModule.ToString().ToLower() + "assetbundleconfig";
                 string mBundleConfigName = bundleModule.ToString().ToLower() + "bundleconfig"+ BundleSettings.Instance.ABSUFFIX;
                 string mBundleConfigPath = BundleSettings.Instance.GetHotAssetsPath(bundleModule) + mBundleConfigName;
-               
+
                 //获取当前模块配置文件所在的路径
-                if (GeneratorBundleConfigPath(bundleModule,mBundleConfigName,ref mBundleConfigPath))
-                {
-                    Debug.Log($"LoadBundleManifest :{mBundleConfigPath}");
-                    //如果该AssetBundle已经加密，则需要解密
-                    if (BundleSettings.Instance.bundleEncrypt.isEncrypt)
-                    {
-                        bundleConfig =await AssetBundle.LoadFromMemoryAsync(AES.AESFileByteDecrypt(mBundleConfigPath, BundleSettings.Instance.bundleEncrypt.encryptKey));
-                    }
-                    else
-                    {
-                        bundleConfig =await AssetBundle.LoadFromFileAsync(mBundleConfigPath);
-                    }
-
-                    if (bundleConfig == null)
-                        throw new InvalidDataException($"无法加载模块配置 AssetBundle：{mBundleConfigPath}");
-                    TextAsset bundleConfigAsset =
-                        await bundleConfig.LoadAssetAsync<TextAsset>(assetBundleName) as TextAsset;
-                    if (bundleConfigAsset == null)
-                        throw new InvalidDataException($"模块配置中缺少 TextAsset：{assetBundleName}");
-
-                    string bundleConfigJson = bundleConfigAsset.text;
-                    Dictionary<uint, BundleItem> parsedBundleItems =
-                        await UniTask.RunOnThreadPool(() =>
-                            ParseBundleItems(bundleConfigJson, bundleModule));
-
-                    lock (mLock)
-                    {
-                        // 并发初始化可能在本次解析期间先完成；同一磁盘配置视为共同成功，禁止重复写入模块标记。
-                        if (mAlreadyLoadBundleModuleList.Contains(bundleModule))
-                            return true;
-
-                        // 配置只有在完整反序列化并构造成功后才一次性提交，失败时不会留下半初始化模块。
-                        List<uint> addedKeys = new List<uint>();
-                        try
-                        {
-                            foreach (KeyValuePair<uint, BundleItem> pair in parsedBundleItems)
-                            {
-                                if (!mAllBundleAssetDic.ContainsKey(pair.Key))
-                                {
-                                    mAllBundleAssetDic.Add(pair.Key, pair.Value);
-                                    addedKeys.Add(pair.Key);
-                                }
-                                else
-                                {
-                                    Debug.LogWarning("AssetBundle Already Exists! BundleName:" + pair.Value.bundleName);
-                                }
-                            }
-                            mAlreadyLoadBundleModuleList.Add(bundleModule);
-                        }
-                        catch
-                        {
-                            // 极端的提交异常也要撤销本次已经插入的键，保持配置字典的全有或全无语义。
-                            foreach (uint crc in addedKeys)
-                                mAllBundleAssetDic.Remove(crc);
-                            throw;
-                        }
-                    }
-
-                    Debug.Log($"Init AssetModule Successes BundleModule:{bundleModule} count: {mAllBundleAssetDic.Count}" );
-                    return true;
-                }
-                else
+                if (!GeneratorBundleConfigPath(bundleModule, mBundleConfigName, ref mBundleConfigPath))
                 {
                     Debug.LogWarning("AssetBundleConfig Not find.  Load AssetBundle failed!"+ bundleModule);
                     return false;
                 }
+
+
+                Debug.Log($"LoadBundleManifest :{mBundleConfigPath}");
+                //如果该AssetBundle已经加密，则需要解密
+                if (BundleSettings.Instance.bundleEncrypt.isEncrypt)
+                {
+                    bundleConfig =await AssetBundle.LoadFromMemoryAsync(AES.AESFileByteDecrypt(mBundleConfigPath, BundleSettings.Instance.bundleEncrypt.encryptKey));
+                }
+                else
+                {
+                    bundleConfig =await AssetBundle.LoadFromFileAsync(mBundleConfigPath);
+                }
+
+                if (bundleConfig == null)
+                    throw new InvalidDataException($"无法加载模块配置 AssetBundle：{mBundleConfigPath}");
+                TextAsset bundleConfigAsset =
+                    await bundleConfig.LoadAssetAsync<TextAsset>(assetBundleName) as TextAsset;
+                if (bundleConfigAsset == null)
+                    throw new InvalidDataException($"模块配置中缺少 TextAsset：{assetBundleName}");
+
+                string bundleConfigJson = bundleConfigAsset.text;
+                ParsedModuleConfig parsedConfig =
+                    await UniTask.RunOnThreadPool(() =>
+                        ParseModuleConfig(bundleConfigJson, bundleModule));
+
+                //00 先递归初始化全部依赖，再提交消费者；Shared→Business 或环会在协议/访问集合处失败。
+                foreach (string dependencyModule in parsedConfig.ModuleDependencies)
+                {
+                    bool dependencySucceeded = await InitializeAssetModuleRecursive(
+                        dependencyModule,
+                        visitingModules,
+                        newlyInitializedModules);
+                    if (!dependencySucceeded)
+                        throw new InvalidDataException(
+                            $"模块 {bundleModule} 的依赖模块初始化失败：{dependencyModule}");
+                }
+
+                lock (mLock)
+                {
+                    // 并发初始化可能在本次解析期间先完成；同一磁盘配置视为共同成功，禁止重复写入模块标记。
+                    if (mAlreadyLoadBundleModuleList.Contains(bundleModule))
+                        return true;
+
+                    //提交前先检查全部冲突，禁止旧的 first-wins 行为造成模块初始化结果依赖加载顺序。
+                    foreach (KeyValuePair<uint, BundleItem> pair in parsedConfig.BundleItems)
+                    {
+                        if (!mAllBundleAssetDic.TryGetValue(pair.Key, out BundleItem existingItem)) continue;
+
+                        string conflictType = string.Equals(NormalizeAssetPath(existingItem.path), NormalizeAssetPath(pair.Value.path), StringComparison.Ordinal) ? "Entry 重复归属" : "CRC32 真碰撞";
+
+                        throw new InvalidDataException($"模块 {bundleModule} 初始化失败，检测到{conflictType}。" + $"CRC={pair.Key}，已有模块={existingItem.bundleModuleType}，已有路径={existingItem.path}，" + $"新模块={pair.Value.bundleModuleType}，新路径={pair.Value.path}");
+                    }
+
+                    // 配置只有在完整校验后才一次性提交，失败时不会留下半初始化模块。
+                    List<uint> addedKeys = new List<uint>();
+
+                    try
+                    {
+                        foreach (KeyValuePair<uint, BundleItem> pair in parsedConfig.BundleItems)
+                        {
+                            mAllBundleAssetDic.Add(pair.Key, pair.Value);
+                            addedKeys.Add(pair.Key);
+                        }
+                        //依赖图与资源项属于同一提交；没有依赖也保存空集合，后续激活无需猜测旧协议。
+                        mModuleDependencies[bundleModule] = new HashSet<string>(parsedConfig.ModuleDependencies, StringComparer.Ordinal);
+
+                        mAlreadyLoadBundleModuleList.Add(bundleModule);
+
+                        //初始化即激活业务模块并取得全部 Shared 租约；前置递归已保证依赖都初始化完成。
+                        if (!TryActivateModuleLeaseLocked(bundleModule, out string leaseError))
+                            throw new InvalidOperationException($"模块 {bundleModule} 初始化后无法取得依赖租约：{leaseError}");
+
+                        newlyInitializedModules.Add(bundleModule);
+                    }
+                    catch
+                    {
+                        // 极端的提交异常也要撤销本次已经插入的键，保持配置字典的全有或全无语义。
+                        foreach (uint crc in addedKeys)
+                            mAllBundleAssetDic.Remove(crc);
+
+                        DeactivateModuleLeaseLocked(bundleModule);
+
+                        mModuleDependencies.Remove(bundleModule);
+
+                        mAlreadyLoadBundleModuleList.Remove(bundleModule);
+
+                        throw;
+                    }
+                }
+
+                Debug.Log($"Init AssetModule Successes BundleModule:{bundleModule} count: {mAllBundleAssetDic.Count}" );
+                return true;
             }
             catch (System.Exception e)
             {
@@ -269,6 +598,8 @@ namespace ZM.ZMAsset
             {
                 // 无论解析或提交是否成功都释放配置 Bundle，避免失败路径泄漏原生内存。
                 bundleConfig?.Unload(false);
+                //00 当前递归层结束后移出访问集合；兄弟模块仍可合法依赖同一个已初始化 Shared。
+                if (!string.IsNullOrWhiteSpace(bundleModule)) visitingModules.Remove(bundleModule);
             }
 
         }
@@ -278,22 +609,52 @@ namespace ZM.ZMAsset
         /// </summary>
         public async UniTask<bool> ReloadAssetModule(string bundleModule)
         {
-            await mConfigurationMutationLock.WaitAsync();
+            await mModuleMutationLock.WaitAsync();
+            bool hasModuleGuard = false;
             try
             {
                 // 热重载同样涉及 AssetBundle 原生对象，只允许在 Unity 主线程进入。
                 await UniTask.SwitchToMainThread();
+                lock (mLock)
+                {
+                    //00 Shared 存在已初始化消费者时禁止重载，即使当前暂时没有资源对象也不能在线更换其配置。
+                    if (HasInitializedDependentsLocked(bundleModule, out string dependentModules))
+                    {
+                        Debug.LogError(
+                            $"模块 {bundleModule} 仍被已初始化模块依赖，无法热重载：{dependentModules}");
+                        return false;
+                    }
+                    if (mModulesBeingCleared.Contains(bundleModule) ||
+                        (mModuleInFlightLoadCountDic.TryGetValue(bundleModule, out int count) && count > 0) ||
+                        HasModuleAsyncLoad(bundleModule))
+                    {
+                        Debug.LogError($"模块 {bundleModule} 仍有加载任务或正在清理，无法热重载配置。");
+                        return false;
+                    }
+                    //00 从通过预检到完成回滚/提交期间拒绝新加载，消除检查与替换配置之间的竞态窗口。
+                    mModulesBeingCleared.Add(bundleModule);
+                    hasModuleGuard = true;
+                }
                 return await ReloadAssetModuleInternal(bundleModule);
             }
             finally
             {
-                mConfigurationMutationLock.Release();
+                if (hasModuleGuard)
+                {
+                    lock (mLock)
+                    {
+                        mModulesBeingCleared.Remove(bundleModule);
+                    }
+                }
+                mModuleMutationLock.Release();
             }
         }
 
         private async UniTask<bool> ReloadAssetModuleInternal(string bundleModule)
         {
             Dictionary<uint, BundleItem> previousItems = new Dictionary<uint, BundleItem>();
+            HashSet<string> previousDependencies = new HashSet<string>(StringComparer.Ordinal);
+            bool previousLeaseWasActive = false;
             bool moduleWasInitialized;
             lock (mLock)
             {
@@ -315,8 +676,8 @@ namespace ZM.ZMAsset
                             item.objArr != null ||
                             item.assetBundle != null ||
                             mAsyncLoadBundleItemActionDic.ContainsKey(pair.Key) ||
-                            mAsyncLoadAddressableItemActionDic.ContainsKey(pair.Key) ||
-                            HasLoadedBundleReference(item.bundleName))
+                            mRemoteBundleLoadTasks.ContainsKey(pair.Key) ||
+                            HasLoadedBundleReference(new ModuleBundleKey(item.bundleModuleType, item.bundleName)))
                         {
                             Debug.LogError(
                                 $"模块 {bundleModule} 仍有活动资源，无法安全重载配置。Bundle：{item.bundleName}");
@@ -327,14 +688,20 @@ namespace ZM.ZMAsset
 
                     foreach (uint crc in previousItems.Keys)
                         mAllBundleAssetDic.Remove(crc);
+                    //00 保存旧模块图和激活状态，只有新配置完整成功后才丢弃回滚快照。
+                    if (mModuleDependencies.TryGetValue(bundleModule, out HashSet<string> dependencies))
+                        previousDependencies = new HashSet<string>(dependencies, StringComparer.Ordinal);
+                    previousLeaseWasActive = mActiveModuleLeases.Contains(bundleModule);
+                    DeactivateModuleLeaseLocked(bundleModule);
+                    mModuleDependencies.Remove(bundleModule);
                     mAlreadyLoadBundleModuleList.Remove(bundleModule);
                 }
             }
 
             if (!moduleWasInitialized)
-                return await InitAssetModuleInternal(bundleModule);
+                return await InitializeAssetModuleInternal(bundleModule);
 
-            bool reloadSucceeded = await InitAssetModuleInternal(bundleModule);
+            bool reloadSucceeded = await InitializeAssetModuleInternal(bundleModule);
             if (reloadSucceeded)
                 return true;
 
@@ -356,16 +723,162 @@ namespace ZM.ZMAsset
                     mAllBundleAssetDic.Remove(crc);
                 foreach (KeyValuePair<uint, BundleItem> pair in previousItems)
                     mAllBundleAssetDic[pair.Key] = pair.Value;
+                //00 先恢复依赖图和模块标记，再按旧状态重新取得租约，回滚结果与重载前完全一致。
+                mModuleDependencies[bundleModule] = previousDependencies;
                 if (!mAlreadyLoadBundleModuleList.Contains(bundleModule))
                     mAlreadyLoadBundleModuleList.Add(bundleModule);
+                if (previousLeaseWasActive &&
+                    !TryActivateModuleLeaseLocked(bundleModule, out string leaseError))
+                    Debug.LogError($"模块 {bundleModule} 重载回滚后恢复依赖租约失败：{leaseError}");
             }
             return false;
         }
 
         /// <summary>
-        /// 反序列化并校验完整配置，返回值尚未写入运行时共享字典。
+        /// 从运行时移除一个已经没有资源缓存的模块配置；旧 ClearModuleAssetsAsync 不会隐式调用它。
         /// </summary>
-        private static Dictionary<uint, BundleItem> ParseBundleItems(
+        internal async UniTask<ModuleUnloadResult> UnloadAssetModuleAsync(string bundleModule)
+        {
+            ModuleUnloadResult result = new ModuleUnloadResult
+            {
+                bundleModule = bundleModule,
+                status = ModuleUnloadStatus.Failed
+            };
+            if (string.IsNullOrWhiteSpace(bundleModule))
+            {
+                result.status = ModuleUnloadStatus.InvalidModule;
+                result.message = "资源模块名称不能为空。";
+                return result;
+            }
+            bundleModule = bundleModule.Trim();
+
+            await mModuleMutationLock.WaitAsync();
+            bool hasModuleGuard = false;
+            try
+            {
+                //00 AssetBundle 原生状态检查和配置移除都固定在 Unity 主线程。
+                await UniTask.SwitchToMainThread();
+                lock (mLock)
+                {
+                    if (!mAlreadyLoadBundleModuleList.Contains(bundleModule))
+                    {
+                        result.status = ModuleUnloadStatus.NotInitialized;
+                        result.message = $"资源模块尚未初始化：{bundleModule}";
+                        return result;
+                    }
+                    //00 只要仍有已初始化消费者，Shared 配置就不能卸载；必须先逐个卸载业务模块。
+                    if (HasInitializedDependentsLocked(bundleModule, out string dependentModules))
+                    {
+                        result.status = ModuleUnloadStatus.DependentModuleInitialized;
+                        result.message =
+                            $"模块 {bundleModule} 仍被已初始化模块依赖：{dependentModules}";
+                        return result;
+                    }
+                    if (mModulesBeingCleared.Contains(bundleModule) ||
+                        (mModuleInFlightLoadCountDic.TryGetValue(bundleModule, out int count) && count > 0) ||
+                        HasModuleAsyncLoad(bundleModule))
+                    {
+                        result.status = ModuleUnloadStatus.Busy;
+                        result.message = $"资源模块仍有加载或清理任务：{bundleModule}";
+                        return result;
+                    }
+                    //00 预检通过后设置同一 Clearing 门禁，直到配置和依赖图全部移除。
+                    mModulesBeingCleared.Add(bundleModule);
+                    hasModuleGuard = true;
+
+                    foreach (KeyValuePair<uint, BundleItem> pair in mAllBundleAssetDic)
+                    {
+                        BundleItem item = pair.Value;
+                        if (!string.Equals(item.bundleModuleType, bundleModule, StringComparison.Ordinal)) continue;
+                        ModuleBundleKey mainBundleKey =
+                            new ModuleBundleKey(item.bundleModuleType, item.bundleName);
+                        if (item.refCount > 0 || item.obj != null || item.objArr != null ||
+                            item.assetBundle != null || HasLoadedBundleReference(mainBundleKey))
+                        {
+                            result.status = ModuleUnloadStatus.InUse;
+                            result.message =
+                                $"资源模块仍有活动资源，必须先成功清理：{bundleModule}，Bundle：{item.bundleName}";
+                            return result;
+                        }
+                    }
+                    //00 防御直接按 Bundle 名加载但没有绑定 BundleItem 的外部调用；任何缓存都阻止配置卸载。
+                    foreach (KeyValuePair<ModuleBundleKey, AssetBundleCache> pair in mAllAlreadyLoadBundleDic)
+                    {
+                        if (!string.Equals(pair.Key.ModuleName, bundleModule, StringComparison.Ordinal)) continue;
+                        if (pair.Value?.assetBundle != null || pair.Value?.referenceCount > 0)
+                        {
+                            result.status = ModuleUnloadStatus.InUse;
+                            result.message = $"资源模块仍有活动 Bundle：{pair.Key}";
+                            return result;
+                        }
+                    }
+
+                    //00 资源与 Bundle 均无持有后，一次性移除 CRC Entry、模块图和初始化标记。
+                    RemoveModuleConfigurationLocked(bundleModule);
+                    result.status = ModuleUnloadStatus.Success;
+                    result.message = $"资源模块配置已卸载：{bundleModule}";
+                    return result;
+                }
+            }
+            catch (Exception exception)
+            {
+                result.status = ModuleUnloadStatus.Failed;
+                result.message = $"资源模块配置卸载失败：{bundleModule}";
+                result.exception = exception;
+                Debug.LogError($"{result.message} Exception:{exception}");
+                return result;
+            }
+            finally
+            {
+                if (hasModuleGuard)
+                {
+                    lock (mLock)
+                    {
+                        mModulesBeingCleared.Remove(bundleModule);
+                    }
+                }
+                mModuleMutationLock.Release();
+            }
+        }
+
+        /// <summary>
+        /// 00 在 mLock 内移除模块配置、依赖租约和所有公开 Entry；调用方必须已完成活动资源预检。
+        /// </summary>
+        private void RemoveModuleConfigurationLocked(string bundleModule)
+        {
+            //00 先释放消费者租约，使 Shared 的反向依赖集合及时更新。
+            DeactivateModuleLeaseLocked(bundleModule);
+            //00 收集后再删除，避免遍历 Dictionary 时修改集合。
+            List<uint> moduleCrcs = new List<uint>();
+            foreach (KeyValuePair<uint, BundleItem> pair in mAllBundleAssetDic)
+            {
+                if (string.Equals(pair.Value.bundleModuleType, bundleModule, StringComparison.Ordinal))
+                    moduleCrcs.Add(pair.Key);
+            }
+            foreach (uint crc in moduleCrcs) mAllBundleAssetDic.Remove(crc);
+            //00 删除正向图、可能的空反向图以及初始化/飞行状态。
+            mModuleDependencies.Remove(bundleModule);
+            mActiveModuleDependents.Remove(bundleModule);
+            mActiveModuleLeases.Remove(bundleModule);
+            mAlreadyLoadBundleModuleList.Remove(bundleModule);
+            mModuleInFlightLoadCountDic.Remove(bundleModule);
+        }
+
+        /// <summary>
+        /// 00 保存尚未提交的模块配置快照；资源项和模块依赖必须一起原子提交。
+        /// </summary>
+        private sealed class ParsedModuleConfig
+        {
+            internal readonly Dictionary<uint, BundleItem> BundleItems =
+                new Dictionary<uint, BundleItem>();
+            internal readonly HashSet<string> ModuleDependencies =
+                new HashSet<string>(StringComparer.Ordinal);
+        }
+
+        /// <summary>
+        /// 00 反序列化并校验完整配置，返回值尚未写入任何运行时共享字典。
+        /// </summary>
+        private static ParsedModuleConfig ParseModuleConfig(
             string bundleConfigJson,
             string bundleModule)
         {
@@ -377,35 +890,178 @@ namespace ZM.ZMAsset
             if (bundleManifest?.bundleInfoList == null)
                 throw new InvalidDataException($"模块 {bundleModule} 的配置列表为空。");
 
-            Dictionary<uint, BundleItem> parsedItems = new Dictionary<uint, BundleItem>();
+            //00 旧 JSON 反序列化会执行字段初始化器，因此不能只凭 formatVersion 默认值判断协议版本。
+            bool hasVersionTwoPayload = !string.IsNullOrWhiteSpace(bundleManifest.moduleName) ||
+                                        (bundleManifest.moduleDependencies != null &&
+                                         bundleManifest.moduleDependencies.Count > 0);
+            //00 任一 Bundle 出现完整依赖列表也明确表示这是 v2 配置。
+            if (!hasVersionTwoPayload)
+            {
+                foreach (BundleInfo bundleInfo in bundleManifest.bundleInfoList)
+                {
+                    if (bundleInfo?.bundleDependencies == null) continue;
+                    hasVersionTwoPayload = true;
+                    break;
+                }
+            }
+            //00 v2 必须声明自身模块；真正旧协议没有任何 v2 载荷时仍按调用方模块兼容读取。
+            if (hasVersionTwoPayload && bundleManifest.formatVersion >= 2 &&
+                !string.Equals(bundleManifest.moduleName?.Trim(), bundleModule, StringComparison.Ordinal))
+                throw new InvalidDataException(
+                    $"模块配置名称不一致：请求模块={bundleModule}，配置模块={bundleManifest.moduleName}");
+            if (hasVersionTwoPayload && bundleManifest.formatVersion < 2)
+                throw new InvalidDataException(
+                    $"模块 {bundleModule} 包含 v2 依赖字段，但 formatVersion={bundleManifest.formatVersion}。");
+            //00 传给依赖解析器的有效版本只在确认 v2 载荷后才是 2，避免旧 JSON 被默认字段值误判。
+            int effectiveFormatVersion = hasVersionTwoPayload ? bundleManifest.formatVersion : 0;
+
+            ParsedModuleConfig parsedConfig = new ParsedModuleConfig();
+            //00 模块依赖先完整校验，Bundle 跨模块依赖随后必须落在这份显式声明中。
+            if (bundleManifest.moduleDependencies != null)
+            {
+                foreach (string rawDependencyModule in bundleManifest.moduleDependencies)
+                {
+                    string dependencyModule = rawDependencyModule?.Trim();
+                    if (string.IsNullOrWhiteSpace(dependencyModule))
+                        throw new InvalidDataException($"模块 {bundleModule} 的 moduleDependencies 包含空模块名。");
+                    if (string.Equals(dependencyModule, bundleModule, StringComparison.Ordinal))
+                        throw new InvalidDataException($"模块 {bundleModule} 不能声明自身为模块依赖。");
+                    //00 HashSet 去重后形成稳定模块图；重复 JSON 项不增加第二份租约。
+                    parsedConfig.ModuleDependencies.Add(dependencyModule);
+                }
+            }
+
             foreach (BundleInfo info in bundleManifest.bundleInfoList)
             {
                 if (info == null)
                     throw new InvalidDataException($"模块 {bundleModule} 的配置包含空资源项。");
+                string normalizedPath = NormalizeAssetPath(info.path);
+                if (string.IsNullOrWhiteSpace(normalizedPath) ||
+                    !normalizedPath.StartsWith("Assets/", StringComparison.Ordinal))
+                    throw new InvalidDataException($"模块 {bundleModule} 存在无效资源路径：{info.path}");
+                uint calculatedCrc = Crc32.GetCrc32(normalizedPath);
+                if (info.crc != calculatedCrc)
+                    throw new InvalidDataException(
+                        $"模块 {bundleModule} 的资源 CRC 与路径不一致：path={normalizedPath}，配置 CRC={info.crc}，计算 CRC={calculatedCrc}");
+                if (!string.Equals(info.bundleModule, bundleModule, StringComparison.Ordinal))
+                    throw new InvalidDataException(
+                        $"模块配置归属不一致：请求模块={bundleModule}，资源声明模块={info.bundleModule}，path={normalizedPath}");
+
+                // DependencyOnly 条目只用于构建 Bundle 依赖关系，不进入全局可直接加载资源索引。
+                if (!info.isLoadableEntry) continue;
                 if (string.IsNullOrWhiteSpace(info.bundleName))
                     throw new InvalidDataException($"模块 {bundleModule} 存在 Bundle 名称为空的资源项。");
+                if (string.IsNullOrWhiteSpace(info.assetName))
+                    throw new InvalidDataException($"模块 {bundleModule} 存在资源名称为空的 Entry：{normalizedPath}");
+
+                //00 协议 v2 优先使用完整模块 Bundle 身份；旧配置自动把字符串依赖归到当前模块。
+                List<ModuleBundleKey> bundleDependencies = SanitizeBundleDependencies(
+                    bundleModule,
+                    info.bundleName,
+                    info.bundleDependce,
+                    info.bundleDependencies,
+                    effectiveFormatVersion,
+                    parsedConfig.ModuleDependencies);
 
                 BundleItem item = new BundleItem
                 {
-                    path = info.path,
-                    crc = info.crc,
+                    path = normalizedPath,
+                    crc = calculatedCrc,
                     bundleModuleType = bundleModule,
                     assetName = info.assetName,
-                    bundleDependce = info.bundleDependce ?? new List<string>(),
+                    //00 旧字段继续保留同模块依赖名称，兼容诊断和历史外部只读代码。
+                    bundleDependce = bundleDependencies
+                        .FindAll(key => string.Equals(key.ModuleName, bundleModule, StringComparison.Ordinal))
+                        .ConvertAll(key => key.BundleName),
+                    //00 所有正式加载和释放路径使用完整组合键。
+                    bundleDependencies = bundleDependencies,
                     bundleName = info.bundleName,
-                    isAddressableAsset = info.isAddressableAsset
+                    isRemoteAsset = info.isAddressableAsset
                 };
-                if (!parsedItems.TryAdd(item.crc, item))
+                if (!parsedConfig.BundleItems.TryAdd(item.crc, item))
                     throw new InvalidDataException(
                         $"模块 {bundleModule} 的配置包含重复 CRC：{item.crc}。");
             }
-            return parsedItems;
+            return parsedConfig;
         }
 
-        private bool HasLoadedBundleReference(string bundleName)
+        /// <summary>
+        /// 00 保留原私有解析测试入口，只返回可加载 Entry；正式初始化使用 ParseModuleConfig 同时取得模块图。
+        /// </summary>
+        private static Dictionary<uint, BundleItem> ParseBundleItems(
+            string bundleConfigJson,
+            string bundleModule)
         {
-            return !string.IsNullOrEmpty(bundleName) &&
-                   mAllAlreadyLoadBundleDic.TryGetValue(bundleName, out AssetBundleCache bundleCache) &&
+            return ParseModuleConfig(bundleConfigJson, bundleModule).BundleItems;
+        }
+
+        /// <summary>
+        /// 00 将新旧协议依赖统一转换为 ModuleBundleKey，并验证跨模块边是否被 moduleDependencies 声明。
+        /// </summary>
+        private static List<ModuleBundleKey> SanitizeBundleDependencies(
+            string ownerModule,
+            string bundleName,
+            List<string> legacyDependencies,
+            List<BundleDependencyInfo> versionTwoDependencies,
+            int formatVersion,
+            HashSet<string> moduleDependencies)
+        {
+            //00 返回新列表而不是修改反序列化对象，热重载失败仍可恢复旧对象图。
+            List<ModuleBundleKey> result = new List<ModuleBundleKey>();
+            HashSet<ModuleBundleKey> uniqueDependencies = new HashSet<ModuleBundleKey>();
+            //00 v2 配置存在完整列表时绝不从旧字符串猜测跨模块归属。
+            if (formatVersion >= 2 && versionTwoDependencies != null)
+            {
+                foreach (BundleDependencyInfo dependency in versionTwoDependencies)
+                {
+                    if (dependency == null)
+                        throw new InvalidDataException(
+                            $"模块 {ownerModule} 的 Bundle {bundleName} 包含空依赖项。");
+                    ModuleBundleKey dependencyKey = new ModuleBundleKey(
+                        dependency.bundleModule,
+                        dependency.bundleName);
+                    if (string.IsNullOrWhiteSpace(dependencyKey.ModuleName) ||
+                        string.IsNullOrWhiteSpace(dependencyKey.BundleName))
+                        throw new InvalidDataException(
+                            $"模块 {ownerModule} 的 Bundle {bundleName} 包含无效依赖身份。" +
+                            $"Module={dependency.bundleModule}，Bundle={dependency.bundleName}");
+                    //00 主 Bundle 自依赖会重复加载和归还，必须过滤；跨模块同名仍是不同合法键。
+                    ModuleBundleKey ownerKey = new ModuleBundleKey(ownerModule, bundleName);
+                    if (dependencyKey == ownerKey || !uniqueDependencies.Add(dependencyKey)) continue;
+                    //00 跨模块 Bundle 依赖必须同时出现在模块依赖图，否则初始化顺序和租约不完整。
+                    if (!string.Equals(dependencyKey.ModuleName, ownerModule, StringComparison.Ordinal) &&
+                        !moduleDependencies.Contains(dependencyKey.ModuleName))
+                        throw new InvalidDataException(
+                            $"模块 {ownerModule} 的 Bundle {bundleName} 依赖 " +
+                            $"{dependencyKey}，但 moduleDependencies 未声明该模块。");
+                    result.Add(dependencyKey);
+                }
+                return result;
+            }
+
+            //00 旧协议只有 Bundle 名，按历史语义全部归属于当前模块。
+            if (legacyDependencies == null) return result;
+            foreach (string dependencyName in legacyDependencies)
+            {
+                ModuleBundleKey dependencyKey = new ModuleBundleKey(ownerModule, dependencyName);
+                if (string.IsNullOrWhiteSpace(dependencyKey.BundleName) ||
+                    string.Equals(bundleName, dependencyKey.BundleName, StringComparison.Ordinal) ||
+                    !uniqueDependencies.Add(dependencyKey)) continue;
+                result.Add(dependencyKey);
+            }
+            return result;
+        }
+
+        private static string NormalizeAssetPath(string path)
+        {
+            return string.IsNullOrWhiteSpace(path) ? string.Empty : path.Trim().Replace('\\', '/').TrimStart('/');
+        }
+
+        private bool HasLoadedBundleReference(ModuleBundleKey bundleKey)
+        {
+            return !string.IsNullOrEmpty(bundleKey.ModuleName) &&
+                   !string.IsNullOrEmpty(bundleKey.BundleName) &&
+                   mAllAlreadyLoadBundleDic.TryGetValue(bundleKey, out AssetBundleCache bundleCache) &&
                    (bundleCache.referenceCount > 0 || bundleCache.assetBundle != null);
         }
         
@@ -416,11 +1072,6 @@ namespace ZM.ZMAsset
         /// <returns></returns>
         public bool GeneratorBundleConfigPath(string bundleModule,string mBundleConfigName,ref string mBundleConfigPath)
         {
-            //如果是寻址资源，默认从热更层加载
-            if (string.Equals(bundleModule,BundleModuleName.AddressAsset))
-            {
-                return true;
-            }
             //如果配置文件 存在，return true，如果不存，我们就直接从内嵌的资源中去加载。
             if (!File.Exists(mBundleConfigPath))
             {
@@ -456,8 +1107,12 @@ namespace ZM.ZMAsset
 
         public BundleItem GetBundleItemByCrc(uint crc)
         {
-            mAllBundleAssetDic.TryGetValue(crc, out BundleItem item);
-            return item;
+            //00 配置初始化、热重载和模块清理都会改写该字典，查询必须复用同一把状态锁。
+            lock (mLock)
+            {
+                mAllBundleAssetDic.TryGetValue(crc, out BundleItem item);
+                return item;
+            }
         }
         #endregion
         
@@ -476,52 +1131,76 @@ namespace ZM.ZMAsset
 
             if (item != null)
             {
-                // 同一资源正在初始化时直接等待所有者完成，不再次增加底层 Bundle 引用。
-                if (mAsyncLoadBundleItemActionDic.TryGetValue(
-                        crc,
-                        out UniTaskCompletionSource<BundleItem> loadingSource))
+                //00 锁内原子检查并登记本资源的初始化任务，消除并发请求下 TryGetValue 与 Add 分离导致的重复登记竞态。
+                UniTaskCompletionSource<BundleItem> ownerSource;
+                bool isOwner;
+                lock (mLock)
                 {
-                    return await loadingSource.Task;
+                    if (mAsyncLoadBundleItemActionDic.TryGetValue(
+                            crc,
+                            out UniTaskCompletionSource<BundleItem> loadingSource))
+                    {
+                        ownerSource = loadingSource;
+                        isOwner = false;
+                    }
+                    else
+                    {
+                        ownerSource = new UniTaskCompletionSource<BundleItem>();
+                        mAsyncLoadBundleItemActionDic.Add(crc, ownerSource);
+                        isOwner = true;
+                    }
+                }
+                if (!isOwner)
+                {
+                    // 同一资源正在初始化时直接等待所有者完成，不再次增加底层 Bundle 引用。
+                    return await ownerSource.Task;
                 }
 
                 //如果AssetBundle为空，说明该资源所在的AssetBundle没有加载进内存，这种情况我们就需要加载该AssetBundle
                 if (item.assetBundle != null)
                 {
+                    //00 登记后发现资源已就绪（例如同步链路已加载），必须先完成本任务并移除登记，避免等待者挂起或残留登记阻塞模块清理。
+                    ownerSource.TrySetResult(item);
+                    lock (mLock)
+                    {
+                        mAsyncLoadBundleItemActionDic.Remove(crc);
+                    }
                     return item;
                 }
-
-                UniTaskCompletionSource<BundleItem> ownerSource =
-                    new UniTaskCompletionSource<BundleItem>();
-                mAsyncLoadBundleItemActionDic.Add(crc, ownerSource);
-                List<string> acquiredBundleNames = new List<string>();
+                //00 回滚列表保存完整模块 Bundle 身份，跨模块依赖失败时不会释放到主资源模块目录。
+                List<ModuleBundleKey> acquiredBundleKeys = new List<ModuleBundleKey>();
                 try
                 {
                     item.assetBundle = await LoadAssetBundleAsync(
                         item.bundleName,
                         item.bundleModuleType,
-                        isEncrypt);
+                        isEncrypt,
+                        item.isRemoteAsset);
 
                     if (item.assetBundle == null)
                     {
-                        Debug.LogError("Start AddressableSystem Load:" + item.bundleName);
+                        Debug.LogError("开始加载远端资源 Bundle：" + item.bundleName);
                         ownerSource.TrySetResult(null);
                         return null;
                     }
-                    acquiredBundleNames.Add(item.bundleName);
+                    acquiredBundleKeys.Add(new ModuleBundleKey(item.bundleModuleType, item.bundleName));
 
                     //需要加载这个AssetBundle依赖的其他的AssetBundle
-                    foreach (var bundleName in item.bundleDependce)
+                    foreach (ModuleBundleKey dependencyKey in
+                             item.bundleDependencies ?? new List<ModuleBundleKey>())
                     {
-                        if (item.bundleName != bundleName)
-                        {
-                            AssetBundle dependencyBundle = await LoadAssetBundleAsync(
-                                bundleName,
+                        AssetBundle dependencyBundle = await LoadAssetBundleAsync(
+                            dependencyKey.BundleName,
+                            dependencyKey.ModuleName,
+                            isEncrypt,
+                            item.isRemoteAsset &&
+                            string.Equals(
+                                dependencyKey.ModuleName,
                                 item.bundleModuleType,
-                                isEncrypt);
-                            if (dependencyBundle == null)
-                                throw new InvalidOperationException($"依赖 Bundle 加载失败：{bundleName}");
-                            acquiredBundleNames.Add(bundleName);
-                        }
+                                StringComparison.Ordinal));
+                        if (dependencyBundle == null)
+                            throw new InvalidOperationException($"依赖 Bundle 加载失败：{dependencyKey}");
+                        acquiredBundleKeys.Add(dependencyKey);
                     }
 
                     ownerSource.TrySetResult(item);
@@ -531,15 +1210,18 @@ namespace ZM.ZMAsset
                 {
                     Debug.LogError($"资源 Bundle 初始化失败，CRC:{crc} Exception:{exception}");
                     // 初始化未完整完成时回滚本次已经取得的 Bundle 引用，避免留下半初始化资源图。
-                    for (int index = acquiredBundleNames.Count - 1; index >= 0; index--)
-                        ReleaseAssetBundle(null, false, acquiredBundleNames[index]);
+                    for (int index = acquiredBundleKeys.Count - 1; index >= 0; index--)
+                        ReleaseAssetBundle(acquiredBundleKeys[index], false);
                     item.assetBundle = null;
                     ownerSource.TrySetResult(null);
                     return null;
                 }
                 finally
                 {
-                    mAsyncLoadBundleItemActionDic.Remove(crc);
+                    lock (mLock)
+                    {
+                        mAsyncLoadBundleItemActionDic.Remove(crc);
+                    }
                 }
             }
             else
@@ -554,21 +1236,46 @@ namespace ZM.ZMAsset
         /// <param name="bundleName"></param>
         /// <param name="bundleModuleType"></param>
         /// <returns></returns>
-        public async UniTask<AssetBundle> LoadAssetBundleAsync(string bundleName, string bundleModuleType,bool isEncrypt = false)
+        public async UniTask<AssetBundle> LoadAssetBundleAsync(
+            string bundleName,
+            string bundleModuleType,
+            bool isEncrypt = false,
+            bool preferHotPath = false)
         {
+            //00 所有缓存和异步去重从入口开始使用完整组合键，不再依赖 Bundle 文件名前缀约定。
+            ModuleBundleKey bundleKey = new ModuleBundleKey(bundleModuleType, bundleName);
+            if (string.IsNullOrWhiteSpace(bundleKey.ModuleName) || string.IsNullOrWhiteSpace(bundleKey.BundleName))
+            {
+                Debug.LogError($"异步加载 AssetBundle 的模块或文件名为空：{bundleKey}");
+                return null;
+            }
             AssetBundleCache bundle = null;
-            mAllAlreadyLoadBundleDic.TryGetValue(bundleName,out bundle);
+            mAllAlreadyLoadBundleDic.TryGetValue(bundleKey,out bundle);
             // 构建端启用全局加密后，所有异步加载入口必须采用同一解密策略。
             bool shouldDecrypt = isEncrypt || BundleSettings.Instance.bundleEncrypt.isEncrypt;
 
             if (bundle==null||(bundle!=null&&bundle.assetBundle==null))
             {
-                //检测该AssetBundle是否在异步加载中
-                mAsyncLoadBundleActionDic.TryGetValue(bundleName,out var taskCompletionSource);
-                if (taskCompletionSource != null)
+                //00 锁内原子检查并登记本 Bundle 的异步任务，命中已有任务时转为等待者，避免并发请求重复加载同一 Bundle。
+                UniTaskCompletionSource taskCompletionSource;
+                bool isOwner;
+                lock (mLock)
+                {
+                    if (mAsyncLoadBundleActionDic.TryGetValue(bundleKey, out taskCompletionSource))
+                    {
+                        isOwner = false;
+                    }
+                    else
+                    {
+                        taskCompletionSource = new UniTaskCompletionSource();
+                        mAsyncLoadBundleActionDic.Add(bundleKey, taskCompletionSource);
+                        isOwner = true;
+                    }
+                }
+                if (!isOwner)
                 {
                     await taskCompletionSource.Task;
-                    mAllAlreadyLoadBundleDic.TryGetValue(bundleName,out var bundleCache);
+                    mAllAlreadyLoadBundleDic.TryGetValue(bundleKey,out var bundleCache);
                     // 等待者同样持有一次 Bundle；缺少这次计数会在并发释放时提前卸载共享 Bundle。
                     if (bundleCache?.assetBundle != null)
                     {
@@ -580,18 +1287,18 @@ namespace ZM.ZMAsset
                 //从类对象池中取出一个AssetBundleCache
                 bundle= mBundleCachePool.Spawn();
                 //计算出AssetBundle加载路径
-                string hotFilePath = BundleSettings.Instance.GetHotAssetsPath(bundleModuleType)+bundleName; 
-                bool isAddressModule = string.Equals(bundleModuleType, BundleModuleName.AddressAsset);
-                bool isHotPath = isAddressModule || BundleSettings.Instance.bundleHotType== BundleHotEnum.Hot && File.Exists(hotFilePath);
-                //通过是否是热更路径 计算出AssetBundle加载的路径
+                string hotFilePath = BundleSettings.Instance.GetHotAssetsPath(bundleModuleType)+bundleName;
+                // RemoteAsset 已在进入本方法前完成下载和校验，因此应优先读取热更目录。
+                // 普通资源仍只在全局热更模式开启时使用热更目录，避免误读遗留缓存。
+                bool isHotPath = ShouldUseHotPath(
+                    hotFilePath,
+                    preferHotPath,
+                    BundleSettings.Instance.bundleHotType == BundleHotEnum.Hot);
+                // 根据已经验证过的来源选择最终 AssetBundle 文件路径。
                 string bundlePath = isHotPath ? hotFilePath :  BundleSettings.Instance.GetAssetsBuiltinBundlePath(bundleModuleType) + bundleName;
                 //判断AssetBUndle是否加密，如果加密了，则需要解密
                 if (shouldDecrypt)
                 {
-                    if (!mAsyncLoadBundleActionDic.ContainsKey(bundleName))
-                    {
-                        mAsyncLoadBundleActionDic.Add(bundleName,new UniTaskCompletionSource());
-                    }
                     try
                     {
                         byte[] bytes=  await AES.AESFileByteDecryptAwait(bundlePath, BundleSettings.Instance.bundleEncrypt.encryptKey,isHotPath);
@@ -599,18 +1306,20 @@ namespace ZM.ZMAsset
                     }
                     catch (Exception e)
                     {
-                        mAsyncLoadBundleActionDic[bundleName].TrySetCanceled();
-                        mAsyncLoadBundleActionDic.Remove(bundleName);
+                        //00 加密分支失败必须显式归还池对象并终止流程，不能依赖后续 null 分支的隐式兜底，避免后续改动引入泄漏。
+                        mBundleCachePool.Recycl(bundle);
+                        lock (mLock)
+                        {
+                            mAsyncLoadBundleActionDic[bundleKey].TrySetCanceled();
+                            mAsyncLoadBundleActionDic.Remove(bundleKey);
+                        }
                         Debug.LogError(e);
+                        return null;
                     }
                   
                 }
                 else
                 {
-                    if (!mAsyncLoadBundleActionDic.ContainsKey(bundleName))
-                    {
-                        mAsyncLoadBundleActionDic.Add(bundleName,new UniTaskCompletionSource());
-                    }
                     try
                     {
                         //通过LoadFromFile 加载AssetBundle 是最快的
@@ -618,8 +1327,11 @@ namespace ZM.ZMAsset
                     }
                     catch (Exception e)
                     {
-                        mAsyncLoadBundleActionDic[bundleName].TrySetCanceled();
-                        mAsyncLoadBundleActionDic.Remove(bundleName);
+                        lock (mLock)
+                        {
+                            mAsyncLoadBundleActionDic[bundleKey].TrySetCanceled();
+                            mAsyncLoadBundleActionDic.Remove(bundleKey);
+                        }
                         Debug.LogError(e);
                     }
                     
@@ -630,19 +1342,25 @@ namespace ZM.ZMAsset
                     // 归还 pool 对象，避免内存泄漏
                     mBundleCachePool.Recycl(bundle);
                     // 通知所有等待方加载失败
-                    if (mAsyncLoadBundleActionDic.TryGetValue(bundleName, out var failedSource))
+                    lock (mLock)
                     {
-                        failedSource.TrySetCanceled();
-                        mAsyncLoadBundleActionDic.Remove(bundleName);
+                        if (mAsyncLoadBundleActionDic.TryGetValue(bundleKey, out var failedSource))
+                        {
+                            failedSource.TrySetCanceled();
+                            mAsyncLoadBundleActionDic.Remove(bundleKey);
+                        }
                     }
                     return null;
                 }
                 //AssetBundle引用计数增加
                 bundle.referenceCount++;
-                mAllAlreadyLoadBundleDic.TryAdd(bundleName,bundle);
+                mAllAlreadyLoadBundleDic.TryAdd(bundleKey,bundle);
                 //设置任务为完成状态
-                mAsyncLoadBundleActionDic[bundleName].TrySetResult();
-                mAsyncLoadBundleActionDic.Remove(bundleName);
+                lock (mLock)
+                {
+                    mAsyncLoadBundleActionDic[bundleKey].TrySetResult();
+                    mAsyncLoadBundleActionDic.Remove(bundleKey);
+                }
             }
             else
             {
@@ -674,20 +1392,31 @@ namespace ZM.ZMAsset
                     return item;
                 }
 
+                //00 同步失败回滚保存完整已取得键，任一依赖失败都按相反顺序归还。
+                List<ModuleBundleKey> acquiredBundleKeys = new List<ModuleBundleKey>();
                 item.assetBundle = LoadAssetBundle(item.bundleName,item.bundleModuleType);
 
                 if (item.assetBundle == null)
                 {
-                    Debug.LogError("Start AddressableSystem Load:" + item.bundleName);
+                    Debug.LogError("开始加载远端资源 Bundle：" + item.bundleName);
                     return null;
                 }
+                acquiredBundleKeys.Add(new ModuleBundleKey(item.bundleModuleType, item.bundleName));
                 //需要加载这个AssetBundle依赖的其他的AssetBundle
-                foreach (var bundleName in item.bundleDependce)
+                foreach (ModuleBundleKey dependencyKey in
+                         item.bundleDependencies ?? new List<ModuleBundleKey>())
                 {
-                    if (item.bundleName!=bundleName)
+                    //00 依赖键已经过滤自依赖；按真实所属模块加载 Shared 或当前模块 Bundle。
+                    if (LoadAssetBundle(dependencyKey.BundleName, dependencyKey.ModuleName) == null)
                     {
-                        LoadAssetBundle(bundleName, item.bundleModuleType);
+                        //00 同步路径回滚此前所有依赖和主 Bundle，不能遗留半初始化引用图。
+                        for (int index = acquiredBundleKeys.Count - 1; index >= 0; index--)
+                            ReleaseAssetBundle(acquiredBundleKeys[index], false);
+                        item.assetBundle = null;
+                        Debug.LogError($"依赖 Bundle 加载失败：{dependencyKey}");
+                        return null;
                     }
+                    acquiredBundleKeys.Add(dependencyKey);
                 }
                 return item;
             }
@@ -705,8 +1434,15 @@ namespace ZM.ZMAsset
         /// <returns></returns>
         public AssetBundle LoadAssetBundle(string bundleName, string bundleModuleType)
         {
+            //00 同步加载与异步加载使用相同的模块 Bundle 身份。
+            ModuleBundleKey bundleKey = new ModuleBundleKey(bundleModuleType, bundleName);
+            if (string.IsNullOrWhiteSpace(bundleKey.ModuleName) || string.IsNullOrWhiteSpace(bundleKey.BundleName))
+            {
+                Debug.LogError($"同步加载 AssetBundle 的模块或文件名为空：{bundleKey}");
+                return null;
+            }
             AssetBundleCache bundle = null;
-            mAllAlreadyLoadBundleDic.TryGetValue(bundleName,out bundle);
+            mAllAlreadyLoadBundleDic.TryGetValue(bundleKey,out bundle);
 
             if (bundle==null||(bundle!=null&&bundle.assetBundle==null))
             {
@@ -714,8 +1450,11 @@ namespace ZM.ZMAsset
                 bundle= mBundleCachePool.Spawn();
                 //计算出AssetBundle加载路径
                 string hotFilePath = BundleSettings.Instance.GetHotAssetsPath(bundleModuleType)+bundleName;
-                bool isAddressModule = string.Equals(bundleModuleType, BundleModuleName.AddressAsset);
-                bool isHotPath = isAddressModule|| BundleSettings.Instance.bundleHotType== BundleHotEnum.Hot && File.Exists(hotFilePath);
+                // 同步入口不承担远端下载；仅在全局热更模式开启且文件存在时读取热更目录。
+                bool isHotPath = ShouldUseHotPath(
+                    hotFilePath,
+                    false,
+                    BundleSettings.Instance.bundleHotType == BundleHotEnum.Hot);
                 //通过是否是热更路径 计算出AssetBundle加载的路径
                 string bundlePath = isHotPath ? hotFilePath :  BundleSettings.Instance.GetAssetsBuiltinBundlePath(bundleModuleType) + bundleName;
                 Debug.Log("LoadAssetBundle Path:"+bundlePath);
@@ -740,7 +1479,7 @@ namespace ZM.ZMAsset
                 }
                 //AssetBundle引用计数增加
                 bundle.referenceCount++;
-                mAllAlreadyLoadBundleDic.TryAdd(bundleName,bundle);
+                mAllAlreadyLoadBundleDic.TryAdd(bundleKey,bundle);
             }
             else
             {
@@ -749,11 +1488,30 @@ namespace ZM.ZMAsset
             }
             return bundle.assetBundle;
         }
+
+        /// <summary>
+        /// 判断 Bundle 是否允许从热更目录读取。
+        /// 即使调用方要求优先使用热更目录，文件不存在时也必须回退内嵌目录，
+        /// 避免把一个不存在的缓存路径交给 Unity AssetBundle API。
+        /// </summary>
+        internal static bool ShouldUseHotPath(
+            string hotFilePath,
+            bool preferHotPath,
+            bool isGlobalHotMode)
+        {
+            return File.Exists(hotFilePath) && (preferHotPath || isGlobalHotMode);
+        }
         #endregion
 
         #region 即用即下AssetBundle加载
 
-        public async UniTask<BundleItem> LoadAssetBundleAddressable(uint crc, string moduleName = "None")
+        /// <summary>
+        /// 按需准备指定资源的远端 Bundle，并复用普通 Bundle 加载链完成主包和依赖装载。
+        /// </summary>
+        /// <param name="crc">由规范化资源路径计算出的 CRC。</param>
+        /// <param name="moduleName">调用方声明的资源归属模块；与配置不一致时拒绝加载。</param>
+        /// <returns>成功时返回资源配置项；初始化、下载、校验或加载失败时返回 null。</returns>
+        public async UniTask<BundleItem> LoadRemoteAssetBundleAsync(uint crc, string moduleName, Action<float> onProgress = null)
         {
             BundleItem item = null;
 
@@ -763,29 +1521,59 @@ namespace ZM.ZMAsset
 
             if (item != null)
             {
-                if (!item.isAddressableAsset)
-                    return await LoadAssetBundleAsync(crc);
-                if (mAsyncLoadAddressableItemActionDic.TryGetValue(
-                        crc,
-                        out UniTaskCompletionSource<BundleItem> loadingSource))
+                // 即使全局 CRC 索引已经命中，也必须核对显式模块，防止调用者误用其他模块资源。
+                if (!string.Equals(item.bundleModuleType, moduleName, StringComparison.Ordinal))
                 {
-                    return await loadingSource.Task;
+                    Debug.LogError(
+                        $"远端资源模块不匹配，调用模块：{moduleName}，真实模块：{item.bundleModuleType}，CRC：{crc}");
+                    return null;
+                }
+
+                if (!item.isRemoteAsset)
+                    return await LoadAssetBundleAsync(crc);
+                // 锁内原子登记远端 Bundle 下载任务，命中已有任务时转为等待者，避免并发请求重复下载。
+                UniTaskCompletionSource<BundleItem> ownerSource;
+                bool isOwner;
+                lock (mLock)
+                {
+                    if (mRemoteBundleLoadTasks.TryGetValue(
+                            crc,
+                            out UniTaskCompletionSource<BundleItem> loadingSource))
+                    {
+                        ownerSource = loadingSource;
+                        isOwner = false;
+                    }
+                    else
+                    {
+                        ownerSource = new UniTaskCompletionSource<BundleItem>();
+                        mRemoteBundleLoadTasks.Add(crc, ownerSource);
+                        isOwner = true;
+                    }
+                }
+                // 并发加载同一资源时进度回调以首个调用者（owner）为准；等待者不重复汇报。
+                if (!isOwner)
+                {
+                    return await ownerSource.Task;
                 }
                 if (item.assetBundle != null)
+                {
+                    //00 登记后发现资源已就绪，必须先完成本任务并移除登记，避免等待者挂起或残留登记阻塞模块清理。
+                    ownerSource.TrySetResult(item);
+                    lock (mLock)
+                    {
+                        mRemoteBundleLoadTasks.Remove(crc);
+                    }
                     return item;
-
-                UniTaskCompletionSource<BundleItem> ownerSource =
-                    new UniTaskCompletionSource<BundleItem>();
-                mAsyncLoadAddressableItemActionDic.Add(crc, ownerSource);
+                }
                 try
                 {
-                    bool downloadSucceeded = await AddressableAssetSystem.Instance.LoadAddressableAsset(
-                        item.bundleModuleType,
+                    bool downloadSucceeded = await RemoteAssetSystem.Instance.PrepareAssetAsync(
+                        moduleName,
                         crc,
-                        item.bundleName);
+                        onProgress);
                     if (!downloadSucceeded)
                     {
-                        Debug.LogError("AddressableSystem downLoad assetBundle failed:" + item.bundleName);
+                        Debug.LogError("远端资源 Bundle 下载失败：" + item.bundleName);
                         ownerSource.TrySetResult(null);
                         return null;
                     }
@@ -797,21 +1585,27 @@ namespace ZM.ZMAsset
                 }
                 catch (Exception exception)
                 {
-                    Debug.LogError($"Addressable 资源初始化失败，CRC:{crc} Exception:{exception}");
+                    Debug.LogError($"远端资源初始化失败，CRC：{crc}，异常：{exception}");
                     ownerSource.TrySetResult(null);
                     return null;
                 }
                 finally
                 {
-                    mAsyncLoadAddressableItemActionDic.Remove(crc);
+                    lock (mLock)
+                    {
+                        mRemoteBundleLoadTasks.Remove(crc);
+                    }
                 }
             }
             else
             {
                
-                if (moduleName!= BundleModuleName.None && await AddressableAssetSystem.Instance.LoadAddressableAsset(moduleName, crc, string.Empty))
+                if (moduleName != BundleModuleName.None &&
+                    await RemoteAssetSystem.Instance.PrepareAssetAsync(moduleName, crc, onProgress))
                 {
-                     return  LoadAssetBundle(crc);
+                    // PrepareAssetAsync 会初始化模块配置；必须重新走异步 CRC 入口，
+                    // 才能读取刚建立的索引并将 RemoteAsset 上下文传递给文件路径选择器。
+                    return await LoadAssetBundleAsync(crc);
                 }
                 Debug.LogError("assets not exists AssetbundleConfig , LoadAssetBundle failed! Crc:" + crc);
                 return null;
@@ -847,14 +1641,18 @@ namespace ZM.ZMAsset
                 if (assetitem.objArr!=null)  assetitem.objArr = null;
                 
 
-                ReleaseAssetBundle(assetitem,unLoad);
+                ReleaseAssetBundle(
+                    new ModuleBundleKey(assetitem.bundleModuleType, assetitem.bundleName),
+                    unLoad);
+                //00 当前资源项已归还其 Bundle 持有，即使底层 Bundle 因其他资源仍存活，也不能保留陈旧引用。
+                assetitem.assetBundle = null;
 
-                if (assetitem.bundleDependce!=null)
+                if (assetitem.bundleDependencies != null)
                 {
-                    foreach (var bundleName in assetitem.bundleDependce)
+                    foreach (ModuleBundleKey dependencyKey in assetitem.bundleDependencies)
                     {
-                        //根据内存引用计数释放AssetBundle
-                        ReleaseAssetBundle(null,unLoad, bundleName);
+                        //00 完整键已在解析阶段去空、去重并排除主 Bundle，自此按真实模块对称归还。
+                        ReleaseAssetBundle(dependencyKey, unLoad);
                     }
                 }
             }
@@ -869,26 +1667,43 @@ namespace ZM.ZMAsset
         /// <param name="assetitem"></param>
         /// <param name="unLoad"></param>
         /// <param name="bundleName"></param>
-        public void ReleaseAssetBundle(BundleItem assetitem, bool unLoad,string bundleName="")
+        public void ReleaseAssetBundle(
+            BundleItem assetitem,
+            bool unLoad,
+            string bundleName = "",
+            string bundleModuleType = "")
         {
-            string assetBudnleName = assetitem == null ? bundleName : assetitem.bundleName;
-            
-            //如果该AssetBUndle的名字不为空，与我们的这个AssetBundle已经加载过了
-            if (!string.IsNullOrEmpty(assetBudnleName) && mAllAlreadyLoadBundleDic.TryGetValue(assetBudnleName, out var bundleCacheItem))
+            //00 保留旧公开方法签名兼容外部代码；新调用必须提供 BundleItem 或完整模块名。
+            ModuleBundleKey bundleKey = assetitem == null
+                ? new ModuleBundleKey(bundleModuleType, bundleName)
+                : new ModuleBundleKey(assetitem.bundleModuleType, assetitem.bundleName);
+            if (string.IsNullOrWhiteSpace(bundleKey.ModuleName))
             {
-                if (bundleCacheItem.assetBundle != null)
-                {
-                    bundleCacheItem.referenceCount--;
-                    //如果该AssetBundle内存引用小于等于0 就说明没有人引用了，就可以直接释放了
-                    if (bundleCacheItem.referenceCount <= 0)
-                    {
-                        bundleCacheItem.assetBundle.Unload(unLoad);
-                        mAllAlreadyLoadBundleDic.Remove(assetBudnleName);
-                        //回收BundleCacheitem类对象
-                        bundleCacheItem.Release();
-                        mBundleCachePool.Recycl(bundleCacheItem);
-                    }
-                }
+                Debug.LogError($"释放 AssetBundle 缺少模块身份，已拒绝按名称猜测：{bundleName}");
+                return;
+            }
+            ReleaseAssetBundle(bundleKey, unLoad);
+        }
+
+        /// <summary>
+        /// 00 按完整模块 Bundle 身份对称归还一次引用。
+        /// </summary>
+        private void ReleaseAssetBundle(ModuleBundleKey bundleKey, bool unLoad)
+        {
+            //00 未加载键按幂等释放处理，异常回滚可以安全重复调用。
+            if (string.IsNullOrWhiteSpace(bundleKey.ModuleName) ||
+                string.IsNullOrWhiteSpace(bundleKey.BundleName) ||
+                !mAllAlreadyLoadBundleDic.TryGetValue(bundleKey, out AssetBundleCache bundleCacheItem)) return;
+            if (bundleCacheItem.assetBundle == null) return;
+
+            bundleCacheItem.referenceCount--;
+            //00 引用计数不得长期为负；小于等于零时立即卸载并从组合键缓存移除。
+            if (bundleCacheItem.referenceCount <= 0)
+            {
+                bundleCacheItem.assetBundle.Unload(unLoad);
+                mAllAlreadyLoadBundleDic.Remove(bundleKey);
+                bundleCacheItem.Release();
+                mBundleCachePool.Recycl(bundleCacheItem);
             }
         }
         #endregion

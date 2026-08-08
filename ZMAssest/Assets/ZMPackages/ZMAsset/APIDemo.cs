@@ -1,5 +1,6 @@
 using System.Collections;
 using System.Collections.Generic;
+using Cysharp.Threading.Tasks;
 using UnityEngine;
 using ZM.ZMAsset;
 
@@ -8,8 +9,8 @@ public class APIDemo : MonoBehaviour
      
     void Awake()
     {
-        ZMAsset.InitFrameWork();
-        ZMAsset.InitAssetsModule(BundleModuleName.Hall);
+        ZMAsset.Modules.InitializeAsync(BundleModuleName.Hall);
+      
     }
 
      

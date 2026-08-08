@@ -7,6 +7,7 @@
       "assetName": "Texture.png",
       "bundleModule": "Hall",
       "isAddressableAsset": false,
+      "isLoadableEntry": true,
       "bundleDependce": []
     },
     {
@@ -16,96 +17,7 @@
       "assetName": "Texture.png",
       "bundleModule": "Hall",
       "isAddressableAsset": false,
-      "bundleDependce": []
-    },
-    {
-      "path": "Assets/Textures/Textures1 10/Texture.png",
-      "crc": 2394942640,
-      "bundleName": "hall_textures1 10.uab",
-      "assetName": "Texture.png",
-      "bundleModule": "Hall",
-      "isAddressableAsset": false,
-      "bundleDependce": []
-    },
-    {
-      "path": "Assets/Textures/Textures1 11/Texture.png",
-      "crc": 1395209525,
-      "bundleName": "hall_textures1 11.uab",
-      "assetName": "Texture.png",
-      "bundleModule": "Hall",
-      "isAddressableAsset": false,
-      "bundleDependce": []
-    },
-    {
-      "path": "Assets/Textures/Textures1 12/Texture.png",
-      "crc": 4007877115,
-      "bundleName": "hall_textures1 12.uab",
-      "assetName": "Texture.png",
-      "bundleModule": "Hall",
-      "isAddressableAsset": false,
-      "bundleDependce": []
-    },
-    {
-      "path": "Assets/Textures/Textures1 13/Texture.png",
-      "crc": 863338622,
-      "bundleName": "hall_textures1 13.uab",
-      "assetName": "Texture.png",
-      "bundleModule": "Hall",
-      "isAddressableAsset": false,
-      "bundleDependce": []
-    },
-    {
-      "path": "Assets/Textures/Textures1 14/Texture.png",
-      "crc": 1309050406,
-      "bundleName": "hall_textures1 14.uab",
-      "assetName": "Texture.png",
-      "bundleModule": "Hall",
-      "isAddressableAsset": false,
-      "bundleDependce": []
-    },
-    {
-      "path": "Assets/Textures/Textures1 15/Texture.png",
-      "crc": 2475712419,
-      "bundleName": "hall_textures1 15.uab",
-      "assetName": "Texture.png",
-      "bundleModule": "Hall",
-      "isAddressableAsset": false,
-      "bundleDependce": []
-    },
-    {
-      "path": "Assets/Textures/Textures1 16/Texture.png",
-      "crc": 777663341,
-      "bundleName": "hall_textures1 16.uab",
-      "assetName": "Texture.png",
-      "bundleModule": "Hall",
-      "isAddressableAsset": false,
-      "bundleDependce": []
-    },
-    {
-      "path": "Assets/Textures/Textures1 17/Texture.png",
-      "crc": 4090292968,
-      "bundleName": "hall_textures1 17.uab",
-      "assetName": "Texture.png",
-      "bundleModule": "Hall",
-      "isAddressableAsset": false,
-      "bundleDependce": []
-    },
-    {
-      "path": "Assets/Textures/Textures1 18/Texture.png",
-      "crc": 3569106909,
-      "bundleName": "hall_textures1 18.uab",
-      "assetName": "Texture.png",
-      "bundleModule": "Hall",
-      "isAddressableAsset": false,
-      "bundleDependce": []
-    },
-    {
-      "path": "Assets/Textures/Textures1 19/Texture.png",
-      "crc": 153806424,
-      "bundleName": "hall_textures1 19.uab",
-      "assetName": "Texture.png",
-      "bundleModule": "Hall",
-      "isAddressableAsset": false,
+      "isLoadableEntry": true,
       "bundleDependce": []
     },
     {
@@ -115,96 +27,7 @@
       "assetName": "Texture.png",
       "bundleModule": "Hall",
       "isAddressableAsset": false,
-      "bundleDependce": []
-    },
-    {
-      "path": "Assets/Textures/Textures1 20/Texture.png",
-      "crc": 4074686827,
-      "bundleName": "hall_textures1 20.uab",
-      "assetName": "Texture.png",
-      "bundleModule": "Hall",
-      "isAddressableAsset": false,
-      "bundleDependce": []
-    },
-    {
-      "path": "Assets/Textures/Textures1 21/Texture.png",
-      "crc": 793252078,
-      "bundleName": "hall_textures1 21.uab",
-      "assetName": "Texture.png",
-      "bundleModule": "Hall",
-      "isAddressableAsset": false,
-      "bundleDependce": []
-    },
-    {
-      "path": "Assets/Textures/Textures1 22/Texture.png",
-      "crc": 2458024992,
-      "bundleName": "hall_textures1 22.uab",
-      "assetName": "Texture.png",
-      "bundleModule": "Hall",
-      "isAddressableAsset": false,
-      "bundleDependce": []
-    },
-    {
-      "path": "Assets/Textures/Textures1 23/Texture.png",
-      "crc": 1326753189,
-      "bundleName": "hall_textures1 23.uab",
-      "assetName": "Texture.png",
-      "bundleModule": "Hall",
-      "isAddressableAsset": false,
-      "bundleDependce": []
-    },
-    {
-      "path": "Assets/Textures/Textures1 24/Texture.png",
-      "crc": 845652989,
-      "bundleName": "hall_textures1 24.uab",
-      "assetName": "Texture.png",
-      "bundleModule": "Hall",
-      "isAddressableAsset": false,
-      "bundleDependce": []
-    },
-    {
-      "path": "Assets/Textures/Textures1 25/Texture.png",
-      "crc": 4025580152,
-      "bundleName": "hall_textures1 25.uab",
-      "assetName": "Texture.png",
-      "bundleModule": "Hall",
-      "isAddressableAsset": false,
-      "bundleDependce": []
-    },
-    {
-      "path": "Assets/Textures/Textures1 26/Texture.png",
-      "crc": 1379604150,
-      "bundleName": "hall_textures1 26.uab",
-      "assetName": "Texture.png",
-      "bundleModule": "Hall",
-      "isAddressableAsset": false,
-      "bundleDependce": []
-    },
-    {
-      "path": "Assets/Textures/Textures1 27/Texture.png",
-      "crc": 2410532659,
-      "bundleName": "hall_textures1 27.uab",
-      "assetName": "Texture.png",
-      "bundleModule": "Hall",
-      "isAddressableAsset": false,
-      "bundleDependce": []
-    },
-    {
-      "path": "Assets/Textures/Textures1 28/Texture.png",
-      "crc": 2833062406,
-      "bundleName": "hall_textures1 28.uab",
-      "assetName": "Texture.png",
-      "bundleModule": "Hall",
-      "isAddressableAsset": false,
-      "bundleDependce": []
-    },
-    {
-      "path": "Assets/Textures/Textures1 29/Texture.png",
-      "crc": 1967899523,
-      "bundleName": "hall_textures1 29.uab",
-      "assetName": "Texture.png",
-      "bundleModule": "Hall",
-      "isAddressableAsset": false,
+      "isLoadableEntry": true,
       "bundleDependce": []
     },
     {
@@ -214,96 +37,7 @@
       "assetName": "Texture.png",
       "bundleModule": "Hall",
       "isAddressableAsset": false,
-      "bundleDependce": []
-    },
-    {
-      "path": "Assets/Textures/Textures1 30/Texture.png",
-      "crc": 1875978269,
-      "bundleName": "hall_textures1 30.uab",
-      "assetName": "Texture.png",
-      "bundleModule": "Hall",
-      "isAddressableAsset": false,
-      "bundleDependce": []
-    },
-    {
-      "path": "Assets/Textures/Textures1 31/Texture.png",
-      "crc": 2991059352,
-      "bundleName": "hall_textures1 31.uab",
-      "assetName": "Texture.png",
-      "bundleModule": "Hall",
-      "isAddressableAsset": false,
-      "bundleDependce": []
-    },
-    {
-      "path": "Assets/Textures/Textures1 32/Texture.png",
-      "crc": 260939094,
-      "bundleName": "hall_textures1 32.uab",
-      "assetName": "Texture.png",
-      "bundleModule": "Hall",
-      "isAddressableAsset": false,
-      "bundleDependce": []
-    },
-    {
-      "path": "Assets/Textures/Textures1 33/Texture.png",
-      "crc": 3525002451,
-      "bundleName": "hall_textures1 33.uab",
-      "assetName": "Texture.png",
-      "bundleModule": "Hall",
-      "isAddressableAsset": false,
-      "bundleDependce": []
-    },
-    {
-      "path": "Assets/Textures/Textures1 34/Texture.png",
-      "crc": 2942845579,
-      "bundleName": "hall_textures1 34.uab",
-      "assetName": "Texture.png",
-      "bundleModule": "Hall",
-      "isAddressableAsset": false,
-      "bundleDependce": []
-    },
-    {
-      "path": "Assets/Textures/Textures1 35/Texture.png",
-      "crc": 1929288462,
-      "bundleName": "hall_textures1 35.uab",
-      "assetName": "Texture.png",
-      "bundleModule": "Hall",
-      "isAddressableAsset": false,
-      "bundleDependce": []
-    },
-    {
-      "path": "Assets/Textures/Textures1 36/Texture.png",
-      "crc": 3476355008,
-      "bundleName": "hall_textures1 36.uab",
-      "assetName": "Texture.png",
-      "bundleModule": "Hall",
-      "isAddressableAsset": false,
-      "bundleDependce": []
-    },
-    {
-      "path": "Assets/Textures/Textures1 37/Texture.png",
-      "crc": 312618565,
-      "bundleName": "hall_textures1 37.uab",
-      "assetName": "Texture.png",
-      "bundleModule": "Hall",
-      "isAddressableAsset": false,
-      "bundleDependce": []
-    },
-    {
-      "path": "Assets/Textures/Textures1 38/Texture.png",
-      "crc": 903019376,
-      "bundleName": "hall_textures1 38.uab",
-      "assetName": "Texture.png",
-      "bundleModule": "Hall",
-      "isAddressableAsset": false,
-      "bundleDependce": []
-    },
-    {
-      "path": "Assets/Textures/Textures1 39/Texture.png",
-      "crc": 3896779509,
-      "bundleName": "hall_textures1 39.uab",
-      "assetName": "Texture.png",
-      "bundleModule": "Hall",
-      "isAddressableAsset": false,
+      "isLoadableEntry": true,
       "bundleDependce": []
     },
     {
@@ -313,15 +47,7 @@
       "assetName": "Texture.png",
       "bundleModule": "Hall",
       "isAddressableAsset": false,
-      "bundleDependce": []
-    },
-    {
-      "path": "Assets/Textures/Textures1 40/Texture.png",
-      "crc": 169640669,
-      "bundleName": "hall_textures1 40.uab",
-      "assetName": "Texture.png",
-      "bundleModule": "Hall",
-      "isAddressableAsset": false,
+      "isLoadableEntry": true,
       "bundleDependce": []
     },
     {
@@ -331,6 +57,7 @@
       "assetName": "Texture.png",
       "bundleModule": "Hall",
       "isAddressableAsset": false,
+      "isLoadableEntry": true,
       "bundleDependce": []
     },
     {
@@ -340,6 +67,7 @@
       "assetName": "Texture.png",
       "bundleModule": "Hall",
       "isAddressableAsset": false,
+      "isLoadableEntry": true,
       "bundleDependce": []
     },
     {
@@ -349,6 +77,7 @@
       "assetName": "Texture.png",
       "bundleModule": "Hall",
       "isAddressableAsset": false,
+      "isLoadableEntry": true,
       "bundleDependce": []
     },
     {
@@ -358,6 +87,7 @@
       "assetName": "Texture.png",
       "bundleModule": "Hall",
       "isAddressableAsset": false,
+      "isLoadableEntry": true,
       "bundleDependce": []
     },
     {
@@ -367,479 +97,69 @@
       "assetName": "Texture.png",
       "bundleModule": "Hall",
       "isAddressableAsset": false,
+      "isLoadableEntry": true,
       "bundleDependce": []
+    },
+    {
+      "path": "Assets/CuboMaterial.mat",
+      "crc": 3618863018,
+      "bundleName": "hall_shared_b06301bd_01.uab",
+      "assetName": "CuboMaterial.mat",
+      "bundleModule": "Hall",
+      "isAddressableAsset": false,
+      "isLoadableEntry": false,
+      "bundleDependce": [
+        "hall_textures1 9.uab"
+      ]
     },
     {
       "path": "Assets/SphereMaterial.mat",
       "crc": 3842364351,
-      "bundleName": "hall_cube 1.uab",
+      "bundleName": "hall_shared_b06301bd_01.uab",
       "assetName": "SphereMaterial.mat",
       "bundleModule": "Hall",
       "isAddressableAsset": false,
+      "isLoadableEntry": false,
       "bundleDependce": [
         "hall_textures1 4.uab"
       ]
     },
     {
-      "path": "Assets/Prefabs/Cube 1.prefab",
-      "crc": 3006949522,
-      "bundleName": "hall_cube 1.uab",
-      "assetName": "Cube 1.prefab",
+      "path": "Assets/Prefabs/CubeA.prefab",
+      "crc": 2334895195,
+      "bundleName": "hall_cubea.uab",
+      "assetName": "CubeA.prefab",
       "bundleModule": "Hall",
       "isAddressableAsset": false,
+      "isLoadableEntry": true,
       "bundleDependce": [
-        "hall_cube 1.uab",
+        "hall_shared_b06301bd_01.uab",
         "hall_textures1 4.uab",
         "hall_textures1 9.uab"
       ]
     },
     {
-      "path": "Assets/CuboMaterial.mat",
-      "crc": 3618863018,
-      "bundleName": "hall_cube 1.uab",
-      "assetName": "CuboMaterial.mat",
+      "path": "Assets/Prefabs/CubeB.prefab",
+      "crc": 94677944,
+      "bundleName": "hall_cubeb.uab",
+      "assetName": "CubeB.prefab",
       "bundleModule": "Hall",
       "isAddressableAsset": false,
+      "isLoadableEntry": true,
       "bundleDependce": [
-        "hall_textures1 9.uab"
-      ]
-    },
-    {
-      "path": "Assets/Prefabs/Cube 2.prefab",
-      "crc": 1035300721,
-      "bundleName": "hall_cube 2.uab",
-      "assetName": "Cube 2.prefab",
-      "bundleModule": "Hall",
-      "isAddressableAsset": false,
-      "bundleDependce": [
-        "hall_cube 1.uab",
+        "hall_shared_b06301bd_01.uab",
         "hall_textures1 4.uab",
         "hall_textures1 9.uab"
       ]
     },
     {
-      "path": "Assets/Prefabs/Cube 3.prefab",
-      "crc": 4045369327,
-      "bundleName": "hall_cube 3.uab",
-      "assetName": "Cube 3.prefab",
-      "bundleModule": "Hall",
-      "isAddressableAsset": false,
-      "bundleDependce": [
-        "hall_cube 1.uab",
-        "hall_textures1 4.uab",
-        "hall_textures1 9.uab"
-      ]
-    },
-    {
-      "path": "Assets/Prefabs/Cube 4.prefab",
-      "crc": 4225394422,
-      "bundleName": "hall_cube 4.uab",
-      "assetName": "Cube 4.prefab",
-      "bundleModule": "Hall",
-      "isAddressableAsset": false,
-      "bundleDependce": [
-        "hall_cube 1.uab",
-        "hall_textures1 4.uab",
-        "hall_textures1 9.uab"
-      ]
-    },
-    {
-      "path": "Assets/Prefabs/Cube 5.prefab",
-      "crc": 930113128,
-      "bundleName": "hall_cube 5.uab",
-      "assetName": "Cube 5.prefab",
-      "bundleModule": "Hall",
-      "isAddressableAsset": false,
-      "bundleDependce": [
-        "hall_cube 1.uab",
-        "hall_textures1 4.uab",
-        "hall_textures1 9.uab"
-      ]
-    },
-    {
-      "path": "Assets/Prefabs/Cube 6.prefab",
-      "crc": 3120521611,
-      "bundleName": "hall_cube 6.uab",
-      "assetName": "Cube 6.prefab",
-      "bundleModule": "Hall",
-      "isAddressableAsset": false,
-      "bundleDependce": [
-        "hall_cube 1.uab",
-        "hall_textures1 4.uab",
-        "hall_textures1 9.uab"
-      ]
-    },
-    {
-      "path": "Assets/Prefabs/Cube 7.prefab",
-      "crc": 1968529685,
-      "bundleName": "hall_cube 7.uab",
-      "assetName": "Cube 7.prefab",
-      "bundleModule": "Hall",
-      "isAddressableAsset": false,
-      "bundleDependce": [
-        "hall_cube 1.uab",
-        "hall_textures1 4.uab",
-        "hall_textures1 9.uab"
-      ]
-    },
-    {
-      "path": "Assets/Prefabs/Cube 8.prefab",
-      "crc": 2893378489,
-      "bundleName": "hall_cube 8.uab",
-      "assetName": "Cube 8.prefab",
-      "bundleModule": "Hall",
-      "isAddressableAsset": false,
-      "bundleDependce": [
-        "hall_cube 1.uab",
-        "hall_textures1 4.uab",
-        "hall_textures1 9.uab"
-      ]
-    },
-    {
-      "path": "Assets/Prefabs/Cube 9.prefab",
-      "crc": 1625256743,
-      "bundleName": "hall_cube 9.uab",
-      "assetName": "Cube 9.prefab",
-      "bundleModule": "Hall",
-      "isAddressableAsset": false,
-      "bundleDependce": [
-        "hall_cube 1.uab",
-        "hall_textures1 4.uab",
-        "hall_textures1 9.uab"
-      ]
-    },
-    {
-      "path": "Assets/Prefabs/Cube 10.prefab",
-      "crc": 3590886971,
-      "bundleName": "hall_cube 10.uab",
-      "assetName": "Cube 10.prefab",
-      "bundleModule": "Hall",
-      "isAddressableAsset": false,
-      "bundleDependce": [
-        "hall_cube 1.uab",
-        "hall_textures1 4.uab",
-        "hall_textures1 9.uab"
-      ]
-    },
-    {
-      "path": "Assets/Prefabs/Cube 11.prefab",
-      "crc": 446863013,
-      "bundleName": "hall_cube 11.uab",
-      "assetName": "Cube 11.prefab",
-      "bundleModule": "Hall",
-      "isAddressableAsset": false,
-      "bundleDependce": [
-        "hall_cube 1.uab",
-        "hall_textures1 4.uab",
-        "hall_textures1 9.uab"
-      ]
-    },
-    {
-      "path": "Assets/Prefabs/Cube 12.prefab",
-      "crc": 2486014278,
-      "bundleName": "hall_cube 12.uab",
-      "assetName": "Cube 12.prefab",
-      "bundleModule": "Hall",
-      "isAddressableAsset": false,
-      "bundleDependce": [
-        "hall_cube 1.uab",
-        "hall_textures1 4.uab",
-        "hall_textures1 9.uab"
-      ]
-    },
-    {
-      "path": "Assets/Prefabs/Cube 13.prefab",
-      "crc": 1485279704,
-      "bundleName": "hall_cube 13.uab",
-      "assetName": "Cube 13.prefab",
-      "bundleModule": "Hall",
-      "isAddressableAsset": false,
-      "bundleDependce": [
-        "hall_cube 1.uab",
-        "hall_textures1 4.uab",
-        "hall_textures1 9.uab"
-      ]
-    },
-    {
-      "path": "Assets/Prefabs/Cube 14.prefab",
-      "crc": 1380096193,
-      "bundleName": "hall_cube 14.uab",
-      "assetName": "Cube 14.prefab",
-      "bundleModule": "Hall",
-      "isAddressableAsset": false,
-      "bundleDependce": [
-        "hall_cube 1.uab",
-        "hall_textures1 4.uab",
-        "hall_textures1 9.uab"
-      ]
-    },
-    {
-      "path": "Assets/Prefabs/Cube 15.prefab",
-      "crc": 2666043487,
-      "bundleName": "hall_cube 15.uab",
-      "assetName": "Cube 15.prefab",
-      "bundleModule": "Hall",
-      "isAddressableAsset": false,
-      "bundleDependce": [
-        "hall_cube 1.uab",
-        "hall_textures1 4.uab",
-        "hall_textures1 9.uab"
-      ]
-    },
-    {
-      "path": "Assets/Prefabs/Cube 16.prefab",
-      "crc": 275226556,
-      "bundleName": "hall_cube 16.uab",
-      "assetName": "Cube 16.prefab",
-      "bundleModule": "Hall",
-      "isAddressableAsset": false,
-      "bundleDependce": [
-        "hall_cube 1.uab",
-        "hall_textures1 4.uab",
-        "hall_textures1 9.uab"
-      ]
-    },
-    {
-      "path": "Assets/Prefabs/Cube 17.prefab",
-      "crc": 3704463138,
-      "bundleName": "hall_cube 17.uab",
-      "assetName": "Cube 17.prefab",
-      "bundleModule": "Hall",
-      "isAddressableAsset": false,
-      "bundleDependce": [
-        "hall_cube 1.uab",
-        "hall_textures1 4.uab",
-        "hall_textures1 9.uab"
-      ]
-    },
-    {
-      "path": "Assets/Prefabs/Cube 18.prefab",
-      "crc": 99454350,
-      "bundleName": "hall_cube 18.uab",
-      "assetName": "Cube 18.prefab",
-      "bundleModule": "Hall",
-      "isAddressableAsset": false,
-      "bundleDependce": [
-        "hall_cube 1.uab",
-        "hall_textures1 4.uab",
-        "hall_textures1 9.uab"
-      ]
-    },
-    {
-      "path": "Assets/Prefabs/Cube 19.prefab",
-      "crc": 3376909584,
-      "bundleName": "hall_cube 19.uab",
-      "assetName": "Cube 19.prefab",
-      "bundleModule": "Hall",
-      "isAddressableAsset": false,
-      "bundleDependce": [
-        "hall_cube 1.uab",
-        "hall_textures1 4.uab",
-        "hall_textures1 9.uab"
-      ]
-    },
-    {
-      "path": "Assets/Prefabs/Cube 20.prefab",
-      "crc": 4018514686,
-      "bundleName": "hall_cube 20.uab",
-      "assetName": "Cube 20.prefab",
-      "bundleModule": "Hall",
-      "isAddressableAsset": false,
-      "bundleDependce": [
-        "hall_cube 1.uab",
-        "hall_textures1 4.uab",
-        "hall_textures1 9.uab"
-      ]
-    },
-    {
-      "path": "Assets/Prefabs/Cube 21.prefab",
-      "crc": 590326368,
-      "bundleName": "hall_cube 21.uab",
-      "assetName": "Cube 21.prefab",
-      "bundleModule": "Hall",
-      "isAddressableAsset": false,
-      "bundleDependce": [
-        "hall_cube 1.uab",
-        "hall_textures1 4.uab",
-        "hall_textures1 9.uab"
-      ]
-    },
-    {
-      "path": "Assets/Prefabs/Cube 22.prefab",
-      "crc": 2912988547,
-      "bundleName": "hall_cube 22.uab",
-      "assetName": "Cube 22.prefab",
-      "bundleModule": "Hall",
-      "isAddressableAsset": false,
-      "bundleDependce": [
-        "hall_cube 1.uab",
-        "hall_textures1 4.uab",
-        "hall_textures1 9.uab"
-      ]
-    },
-    {
-      "path": "Assets/Prefabs/Cube 23.prefab",
-      "crc": 1628089629,
-      "bundleName": "hall_cube 23.uab",
-      "assetName": "Cube 23.prefab",
-      "bundleModule": "Hall",
-      "isAddressableAsset": false,
-      "bundleDependce": [
-        "hall_cube 1.uab",
-        "hall_textures1 4.uab",
-        "hall_textures1 9.uab"
-      ]
-    },
-    {
-      "path": "Assets/Prefabs/Cube 24.prefab",
-      "crc": 1808770052,
-      "bundleName": "hall_cube 24.uab",
-      "assetName": "Cube 24.prefab",
-      "bundleModule": "Hall",
-      "isAddressableAsset": false,
-      "bundleDependce": [
-        "hall_cube 1.uab",
-        "hall_textures1 4.uab",
-        "hall_textures1 9.uab"
-      ]
-    },
-    {
-      "path": "Assets/Prefabs/Cube 25.prefab",
-      "crc": 2808456346,
-      "bundleName": "hall_cube 25.uab",
-      "assetName": "Cube 25.prefab",
-      "bundleModule": "Hall",
-      "isAddressableAsset": false,
-      "bundleDependce": [
-        "hall_cube 1.uab",
-        "hall_textures1 4.uab",
-        "hall_textures1 9.uab"
-      ]
-    },
-    {
-      "path": "Assets/Prefabs/Cube 26.prefab",
-      "crc": 703243129,
-      "bundleName": "hall_cube 26.uab",
-      "assetName": "Cube 26.prefab",
-      "bundleModule": "Hall",
-      "isAddressableAsset": false,
-      "bundleDependce": [
-        "hall_cube 1.uab",
-        "hall_textures1 4.uab",
-        "hall_textures1 9.uab"
-      ]
-    },
-    {
-      "path": "Assets/Prefabs/Cube 27.prefab",
-      "crc": 3846218727,
-      "bundleName": "hall_cube 27.uab",
-      "assetName": "Cube 27.prefab",
-      "bundleModule": "Hall",
-      "isAddressableAsset": false,
-      "bundleDependce": [
-        "hall_cube 1.uab",
-        "hall_textures1 4.uab",
-        "hall_textures1 9.uab"
-      ]
-    },
-    {
-      "path": "Assets/Prefabs/Cube 28.prefab",
-      "crc": 1012969803,
-      "bundleName": "hall_cube 28.uab",
-      "assetName": "Cube 28.prefab",
-      "bundleModule": "Hall",
-      "isAddressableAsset": false,
-      "bundleDependce": [
-        "hall_cube 1.uab",
-        "hall_textures1 4.uab",
-        "hall_textures1 9.uab"
-      ]
-    },
-    {
-      "path": "Assets/Prefabs/Cube 29.prefab",
-      "crc": 4039815637,
-      "bundleName": "hall_cube 29.uab",
-      "assetName": "Cube 29.prefab",
-      "bundleModule": "Hall",
-      "isAddressableAsset": false,
-      "bundleDependce": [
-        "hall_cube 1.uab",
-        "hall_textures1 4.uab",
-        "hall_textures1 9.uab"
-      ]
-    },
-    {
-      "path": "Assets/Prefabs/Cube 30.prefab",
-      "crc": 4177444541,
-      "bundleName": "hall_cube 30.uab",
-      "assetName": "Cube 30.prefab",
-      "bundleModule": "Hall",
-      "isAddressableAsset": false,
-      "bundleDependce": [
-        "hall_cube 1.uab",
-        "hall_textures1 4.uab",
-        "hall_textures1 9.uab"
-      ]
-    },
-    {
-      "path": "Assets/Prefabs/Cube 31.prefab",
-      "crc": 877968931,
-      "bundleName": "hall_cube 31.uab",
-      "assetName": "Cube 31.prefab",
-      "bundleModule": "Hall",
-      "isAddressableAsset": false,
-      "bundleDependce": [
-        "hall_cube 1.uab",
-        "hall_textures1 4.uab",
-        "hall_textures1 9.uab"
-      ]
-    },
-    {
-      "path": "Assets/Prefabs/Cube 32.prefab",
-      "crc": 3134962112,
-      "bundleName": "hall_cube 32.uab",
-      "assetName": "Cube 32.prefab",
-      "bundleModule": "Hall",
-      "isAddressableAsset": false,
-      "bundleDependce": [
-        "hall_cube 1.uab",
-        "hall_textures1 4.uab",
-        "hall_textures1 9.uab"
-      ]
-    },
-    {
-      "path": "Assets/Prefabs/Cube 33.prefab",
-      "crc": 1987164510,
-      "bundleName": "hall_cube 33.uab",
-      "assetName": "Cube 33.prefab",
-      "bundleModule": "Hall",
-      "isAddressableAsset": false,
-      "bundleDependce": [
-        "hall_cube 1.uab",
-        "hall_textures1 4.uab",
-        "hall_textures1 9.uab"
-      ]
-    },
-    {
-      "path": "Assets/Prefabs/Cube.prefab",
-      "crc": 2986660343,
-      "bundleName": "hall_cube.uab",
-      "assetName": "Cube.prefab",
-      "bundleModule": "Hall",
-      "isAddressableAsset": false,
-      "bundleDependce": [
-        "hall_cube 1.uab",
-        "hall_textures1 4.uab",
-        "hall_textures1 9.uab"
-      ]
-    },
-    {
-      "path": "Assets//ZMPackages/ZMAsset/Config/hallassetbundleconfig.json",
-      "crc": 710148973,
+      "path": "Assets/ZMPackages/ZMAsset/Config/hallassetbundleconfig.json",
+      "crc": 1909326844,
       "bundleName": "hallbundleconfig.uab",
       "assetName": "hallassetbundleconfig.json",
       "bundleModule": "Hall",
       "isAddressableAsset": false,
+      "isLoadableEntry": false,
       "bundleDependce": []
     }
   ]

@@ -24,7 +24,7 @@ namespace ZM.ZMAsset
     {
         void Initlizate();
 
-        UniTask<bool> InitAssetModule(string bundleModule, bool isAddressableAsset = false);
+        UniTask<bool> InitAssetModule(string bundleModule, bool isRemoteAsset = false);
 
         void PreLoadObj(string path, int count = 1);
 
@@ -46,7 +46,6 @@ namespace ZM.ZMAsset
 
         UniTask<T> LoadResourceAsync<T>(string path) where T : UnityEngine.Object;
         UniTask<T> LoadResourceAsync<T>(string path,bool isEncrypt) where T : UnityEngine.Object;
-        //Task<T> LoadResourceAsyncAas<T>(string path, BundleModuleName moduleName ) where T : UnityEngine.Object;
         void RemoveObjectLoadCallBack(long loadid);
 
         void Release(GameObject obj, bool destroyCache = false);
@@ -77,5 +76,18 @@ namespace ZM.ZMAsset
         void ClearAllAsyncLoadTask();
 
         void ClearResourcesAssets(bool absoluteCleaning); //是否深度清理
+
+        /// <summary>
+        /// 清理指定资源模块中由框架跟踪的缓存和对象。
+        /// </summary>
+        /// <remarks>
+        /// ForceTrackedObjects 不负责业务代码持有的 Texture、Sprite、AudioClip、TextAsset 等裸引用。
+        /// </remarks>
+        UniTask<ModuleClearResult> ClearModuleAssetsAsync(string bundleModule, ModuleClearMode mode = ModuleClearMode.PooledOnly);
+
+        /// <summary>
+        /// 清理模块资源并显式移除其配置、依赖图和租约；Shared 有依赖模块时失败。
+        /// </summary>
+        UniTask<ModuleUnloadResult> UnloadModuleAssetsAsync(string bundleModule, ModuleClearMode mode = ModuleClearMode.PooledOnly);
     }
 }

@@ -110,7 +110,7 @@ public partial class BuildWindows
             DrawManualCard("模块打包规则",
                 "预制体包：以 Prefab 为入口收集依赖并生成 Bundle。\n\n" +
                 "文件夹子包：按指定目录的子文件夹分别生成 Bundle。\n\n" +
-                "单个 Bundle：将指定文件夹内容合并到一个 Bundle。\n\n" +
+                "文件夹包：将指定文件夹内容合并到一个 Bundle。\n\n" +
                 "源文件配置：不打包为 Bundle，直接复制原文件，适用于 mp3、mp4 等。\n\n" +
                 "修改规则后务必保存配置，再重新执行资源构建。",
                 cardWidth);

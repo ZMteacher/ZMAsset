@@ -13,6 +13,7 @@
 using System.Collections;
 using System.Collections.Generic;
 using System.IO;
+using System.Threading.Tasks;
 using UnityEngine;
 
 public class FileHelper
@@ -53,11 +54,11 @@ public class FileHelper
         stream.Close();
     }
     /// <summary>
-    /// 异步写入文件
+    /// 异步写入文件；返回可等待任务，调用方必须 await 或显式观察异常，禁止静默丢弃。
     /// </summary>
     /// <param name="filePath"></param>
     /// <param name="data"></param>
-    public static async void WriteFileAsync(string filePath,string data)
+    public static async Task WriteFileAsync(string filePath,string data)
     {
         await File.WriteAllTextAsync(filePath, data);
     }

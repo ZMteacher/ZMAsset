@@ -12,7 +12,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: ee52d936477a1e344a630017ee8d6a01, type: 3}
   m_Name: AssetsBundleSettings
   m_EditorClassIdentifier: 
-  AssetBundleDownLoadUrl: http://192.168.2.113
+  AssetBundleDownLoadUrl: http://192.168.2.114
   bundleEncrypt:
     isEncrypt: 0
     encryptKey: zhumengxy
@@ -20,6 +20,7 @@ MonoBehaviour:
   buildbundleOptions: 256
   buildTarget: 13
   bundleHotType: 0
-  loadAssetType: 0
+  loadAssetType: 1
   MAX_THREAD_COUNT: 3
   ZMAssetRootPath: ZMPackages/ZMAsset
+  ModuleAssetRootPath: Assets/GameData

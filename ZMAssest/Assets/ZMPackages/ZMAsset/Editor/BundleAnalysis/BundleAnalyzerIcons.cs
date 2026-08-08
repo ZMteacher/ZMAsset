@@ -23,7 +23,8 @@ namespace ZM.Editor
             Overview,
             Size,
             Browser,
-            Bundle
+            Bundle,
+            Warning
         }
 
         internal static void Draw(Rect rect, Icon icon, Color color, float width = 1.7f)
@@ -98,6 +99,12 @@ namespace ZM.Editor
                     break;
                 case Icon.Bundle:
                     DrawCube(rect, width);
+                    break;
+                case Icon.Warning:
+                    //00 警告三角使用统一 view box 和抗锯齿描边，供分析器与构建确认窗口共同复用。
+                    Line(width, P(rect, .50f, .10f), P(rect, .91f, .84f), P(rect, .09f, .84f), P(rect, .50f, .10f));
+                    Line(width, P(rect, .50f, .33f), P(rect, .50f, .59f));
+                    Circle(P(rect, .50f, .72f), rect.width * .025f, width + .8f);
                     break;
             }
             Handles.color = previous;

@@ -83,6 +83,10 @@ public class BundleSettings : ScriptableObject
 
     [Tooltip("资源框架总路径节点（基于 Assets 目录），移动框架后需要同步修改")]
     public string ZMAssetRootPath = "ThirdParty/ZMAsset";
+    //00 所有业务资源模块统一存放在该目录的同名子目录中，例如 GameOne 对应 Assets/GameData/GameOne。
+    //00 该全局约定替代每个模块重复填写根目录，不改变具体打包规则和资源加载策略。
+    [Tooltip("资源模块总目录；模块物理目录按‘总目录/模块名称’自动计算")]
+    public string ModuleAssetRootPath = "Assets/GameData";
     [Tooltip("AssetBundle 热更文件储存路径")]
     private string HotAssetsPath { get { return Application.persistentDataPath + "/HotAssets/"; } }
     [Tooltip("AssetBundle 解压路径")]

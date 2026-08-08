@@ -126,13 +126,18 @@ public class BuildHotPatchWindow : BundleBehaviour
         }
 
         EditorPrefs.SetString("PatchVersion", hotVersion);
-        var jobs = new List<(string name, Func<System.Collections.IEnumerator> action)>();
+        //00 冻结业务模块选择；Shared 若作为依赖会自动加入只读比对，但不能直接发布热更。
+        var selectedModules = new List<BundleModuleData>();
         foreach (BundleModuleData item in moduleDataList)
-            if (item.isBuild)
-            {
-                BundleModuleData module = item;
-                jobs.Add((module.moduleName, () => BuildBundleCompiler.BuildAssetBundleStaged(module, BuildType.HotPatch, patchVersion, hotAppVersion, patchDes)));
-            }
+            if (item != null && item.isBuild) selectedModules.Add(item);
+        //00 热更也使用单一事务，避免多个业务模块中途失败后只发布一部分。
+        var jobs = new List<(string name, Func<System.Collections.IEnumerator> action)>();
+        jobs.Add(("模块依赖闭包", () => MultiModuleBuildOrchestrator.BuildStaged(
+            selectedModules,
+            BuildType.HotPatch,
+            patchVersion,
+            hotAppVersion,
+            patchDes)));
         string output = Path.GetFullPath(Path.Combine(Application.dataPath, "..", "HotAssets"));
         ZMBuildProgress.RunStaged("热更补丁", jobs, output);
     }

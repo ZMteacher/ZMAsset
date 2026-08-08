@@ -152,7 +152,11 @@ public class BundleBehaviour
 
         DrawResourceIcon(new Rect(visualRect.x + 18, visualRect.y + 91, 17, 17));
         Rect editRect = new(visualRect.xMax - 69, visualRect.yMax - 32, 54, 24);
-        GUI.Label(new Rect(visualRect.x + 42, visualRect.y + 88, editProgress > .15f ? visualRect.width - 118 : visualRect.width - 55, 24), module.isAddressableAsset ? "可寻址" : "本地资源", ZMBuildStyles.CardMeta);
+        //00 Shared 卡片优先展示模块职责；普通业务模块继续展示既有寻址方式。
+        string moduleMeta = module.moduleRole == BundleModuleRole.Shared
+            ? "共享模块"
+            : module.isAddressableAsset ? "远端资源" : "本地资源";
+        GUI.Label(new Rect(visualRect.x + 42, visualRect.y + 88, editProgress > .15f ? visualRect.width - 118 : visualRect.width - 55, 24), moduleMeta, ZMBuildStyles.CardMeta);
 
         if (editProgress > .001f)
         {
@@ -273,6 +277,9 @@ public class BundleBehaviour
         int count = module.prefabPathArr?.Length ?? 0;
         count += module.rootFolderPathArr?.Length ?? 0;
         count += module.signFolderPathArr?.Length ?? 0;
+        //00 修复历史遗漏：源文件规则未计入卡片统计；单文件包规则同样需要计入。
+        count += module.sourceFolderPathArr?.Length ?? 0;
+        count += module.singleFilePathArr?.Length ?? 0;
         return count;
     }
 

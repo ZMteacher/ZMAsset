@@ -42,6 +42,13 @@ namespace ZM.ZMAsset
         /// </summary>
         private int MAX_THREAD_COUNT = 3;
         /// <summary>
+        /// 单模块 API 与显式多模块事务共用同一个下载线程预算，避免两套并发各自达到上限。
+        /// </summary>
+        private readonly HotDownloadScheduler mDownloadScheduler = new HotDownloadScheduler();
+        private readonly MultiModuleHotUpdateCoordinator mTransactionCoordinator;
+        private bool mIsTransactionRunning;
+        private Exception mTransactionRecoveryFailure;
+        /// <summary>
         /// 所有热更资源模块
         /// </summary>
         private Dictionary<string, HotAssetsModule> mAllAssetsModuleDic = new Dictionary<string, HotAssetsModule>();
@@ -72,9 +79,39 @@ namespace ZM.ZMAsset
         /// </summary>
         public static Action<HotFileInfo> DownLoadBundleFinish;
 
+        /// <summary>
+        /// 创建热更新管理器，并在任何新请求前恢复未完成的组事务。
+        /// </summary>
+        public HotAssetsManager()
+        {
+            mTransactionCoordinator = new MultiModuleHotUpdateCoordinator(this, mDownloadScheduler);
+            try
+            {
+                // 任何新请求开始前先处理进程中断遗留的组日志，避免在半提交状态上继续下载。
+                mTransactionCoordinator.RecoverInterruptedTransactions();
+            }
+            catch (Exception exception)
+            {
+                mTransactionRecoveryFailure = exception;
+                Debug.LogError($"恢复中断的多模块热更新事务失败，后续事务将保持可诊断失败：{exception}");
+            }
+        }
+
         public void HotAssets(string bundleModule, Action<string> startHotCallBack, Action<string> hotFinish, Action<string> waiteDownLoad, 
             bool isCheckAssetsVersion = true, Action<string, HotFileInfo> hotFailed = null)
         {
+            if (mTransactionRecoveryFailure != null)
+            {
+                Debug.LogError($"存在尚未恢复的多模块事务，已拒绝模块 {bundleModule} 热更新：{mTransactionRecoveryFailure}");
+                hotFailed?.Invoke(bundleModule, null);
+                return;
+            }
+            if (mIsTransactionRunning)
+            {
+                Debug.LogError($"多模块热更新事务执行期间不能启动独立模块热更新：{bundleModule}");
+                hotFailed?.Invoke(bundleModule, null);
+                return;
+            }
             if (BundleSettings.Instance.bundleHotType==  BundleHotEnum.NoHot)
             {
                 hotFinish?.Invoke(bundleModule);
@@ -83,6 +120,7 @@ namespace ZM.ZMAsset
 
             //读取配置中的最大下载线程个数
             MAX_THREAD_COUNT = Mathf.Max(1, BundleSettings.Instance.MAX_THREAD_COUNT);
+            mDownloadScheduler.SetTotalThreadCount(MAX_THREAD_COUNT);
             RegisterModuleCallbacks(bundleModule, startHotCallBack, hotFinish, hotFailed);
 
             // 同模块已经下载中时只合并调用方，不创建第二个下载器。
@@ -116,6 +154,96 @@ namespace ZM.ZMAsset
         }
 
         /// <summary>
+        /// 执行调用方显式指定的多模块事务；不会自动追加 Shared 或其消费者。
+        /// </summary>
+        /// <summary>
+        /// 启动显式多模块事务；与旧单模块队列互斥，返回结果而不把业务异常吞掉。
+        /// </summary>
+        public async UniTask<HotUpdateTransactionResult> HotAssetsTransactionAsync(HotUpdateTransactionRequest request)
+        {
+            if (mTransactionRecoveryFailure != null)
+            {
+                return new HotUpdateTransactionResult
+                {
+                    Succeeded = false,
+                    Message = "上次多模块热更新事务恢复失败，已阻止覆盖现有资源。请根据日志检查磁盘状态后重启应用。",
+                    Exception = mTransactionRecoveryFailure,
+                    OrderedModules = request?.OrderedModules
+                };
+            }
+            if (mIsTransactionRunning || mDownLoadingAssetsModuleDic.Count > 0 || mWaitDownLoadQueue.Count > 0)
+            {
+                return new HotUpdateTransactionResult
+                {
+                    Succeeded = false,
+                    Message = "已有热更新任务正在执行，请等待其结束后再启动多模块事务。",
+                    OrderedModules = request?.OrderedModules
+                };
+            }
+
+            MAX_THREAD_COUNT = Mathf.Max(1, BundleSettings.Instance.MAX_THREAD_COUNT);
+            // 每次事务开始都读取最新配置，防止运行时修改线程预算后仍使用旧值。
+            mDownloadScheduler.SetTotalThreadCount(MAX_THREAD_COUNT);
+            mIsTransactionRunning = true;
+            try
+            {
+                return await mTransactionCoordinator.ExecuteAsync(request);
+            }
+            catch (Exception exception)
+            {
+                return new HotUpdateTransactionResult
+                {
+                    Succeeded = false,
+                    Message = $"无法启动多模块热更新事务：{exception.Message}",
+                    Exception = exception,
+                    OrderedModules = request?.OrderedModules
+                };
+            }
+            finally
+            {
+                mIsTransactionRunning = false;
+            }
+        }
+
+        /// <summary>
+        /// 将事务模块加入主线程更新与全局线程调度，但不加入旧单模块回调字典。
+        /// </summary>
+        /// <summary>
+        /// 将组事务模块接入主线程更新和全局下载调度，但不接入旧单模块完成回调。
+        /// </summary>
+        internal void ActivateCoordinatedModule(HotAssetsModule module)
+        {
+            if (!mDownLoadAssetsModuleList.Contains(module))
+                mDownLoadAssetsModuleList.Add(module);
+            mDownloadScheduler.Register(module);
+        }
+
+        /// <summary>
+        /// 组事务模块准备完成或失败后移出活动集合，释放其下载额度。
+        /// </summary>
+        internal void DeactivateCoordinatedModule(HotAssetsModule module)
+        {
+            mDownLoadAssetsModuleList.Remove(module);
+            mDownloadScheduler.Unregister(module);
+        }
+
+        /// <summary>
+        /// 下载器创建后刷新额度；这样首个模块不会在其他模块尚未启动时独占预算。
+        /// </summary>
+        internal void RefreshCoordinatedDownloadAllocation()
+        {
+            // 下载器已经创建后再次应用额度，确保本批所有模块合计不超过全局线程上限。
+            mDownloadScheduler.SetTotalThreadCount(MAX_THREAD_COUNT);
+        }
+
+        internal void MarkTransactionRecoveryFailure(Exception exception)
+        {
+            // 保留首次恢复故障作为门禁根因，禁止后续异常覆盖最接近现场的诊断。
+            if (mTransactionRecoveryFailure == null)
+                mTransactionRecoveryFailure = exception;
+        }
+
+        /// <summary>
         /// 登记调用方回调，同模块所有请求共享一次真实热更操作。
         /// </summary>
         private void RegisterModuleCallbacks(string bundleModule, Action<string> startHot, Action<string> hotFinish,
@@ -144,12 +272,14 @@ namespace ZM.ZMAsset
             mDownLoadingAssetsModuleDic.Add(bundleModule, assetsModule);
             if (!mDownLoadAssetsModuleList.Contains(assetsModule))
                 mDownLoadAssetsModuleList.Add(assetsModule);
+            mDownloadScheduler.Register(assetsModule);
 
             // 管理器事件只允许订阅一次，避免重复热更时同一个模块被重复结算。
             assetsModule.OnDownLoadAllAssetsFinish -= HotModuleAssetsFinish;
             assetsModule.OnDownLoadAllAssetsFinish += HotModuleAssetsFinish;
             assetsModule.OnDownLoadAllAssetsFailed -= HotModuleAssetsFailed;
             assetsModule.OnDownLoadAllAssetsFailed += HotModuleAssetsFailed;
+            // 旧单模块入口仍由管理器负责生命周期登记；模块完成时会回到 HotModuleAssetsFinish 释放额度。
             assetsModule.StartHotAssets(
                 () =>
                 {
@@ -193,28 +323,28 @@ namespace ZM.ZMAsset
         }
   
         /// <summary>
-        /// 检测资源版本是否需要热更
+        /// 检测资源版本是否需要热更，并返回需要下载的热更大小。
         /// </summary>
         /// <param name="bundleModule">热更模块</param>
-        /// <param name="callBack">热更回调</param>
-        public void  CheckAssetsVersion(string bundleModule, Action<bool, float> callBack)
+        public async UniTask<HotUpdateVersionCheckResult> CheckAssetsVersionAsync(string bundleModule)
         {
             if (BundleSettings.Instance.bundleHotType == BundleHotEnum.NoHot)
             {
-                Debug.Log("NoHot加载模式，不需要热更");
-                callBack?.Invoke(false, 0);
-                return;
+                Debug.Log($"模块 {bundleModule} 热更类型为 NoHot，跳过热更检测");
+                return new HotUpdateVersionCheckResult(false, 0);
             }
+
             HotAssetsModule assetsModule = GetOrNewAssetModule(bundleModule);
-            assetsModule.CheckAssetsVersion(async (isHot,sizem)=>
+            
+            (bool isHot, float downloadSizeMb) = await assetsModule.CheckAssetsVersionAsync();
+            
+            if (!isHot)
             {
-               if (!isHot)
-               { 
-                   await ZMAsset.InitAssetsModule(bundleModule);
-               }
-               callBack?.Invoke(isHot, sizem);
-           } );
-        } 
+                // 无补丁模块仍要确保配置初始化；异常沿任务传播，不再被回调中的 async lambda 静默呑掉。
+                await ZMAsset.Modules.InitializeAsync(bundleModule);
+            }
+            return new HotUpdateVersionCheckResult(isHot, downloadSizeMb);
+        }
         /// <summary>
         /// 获取热更模块
         /// </summary>
@@ -227,6 +357,26 @@ namespace ZM.ZMAsset
                 return mAllAssetsModuleDic[bundleModule];
             }
             return null;
+        }
+
+        /// <summary>
+        /// 返回模块只读状态；业务层应使用该方法观察状态，不应直接驱动 HotAssetsModule 生命周期。
+        /// </summary>
+        public HotAssetsModuleState GetHotAssetsModuleState(string bundleModule)
+        {
+            HotAssetsModule module = GetHotAssetsModule(bundleModule);
+            if (module == null)
+                return null;
+
+            return new HotAssetsModuleState
+            {
+                BundleModule = module.CurBundleModuleName,
+                IsHotUpdateRunning = module.IsHotUpdateRunning,
+                IsAssetModuleInitialized = AssetBundleManager.Instance.IsAssetModuleInitialized(bundleModule),
+                HotAssetCount = module.HotAssetCount,
+                NeedDownloadAssetCount = module.mNeedDownLoadAssetsList.Count,
+                DownloadedSizeM = module.AssetsDownLoadSizeM
+            };
         }
         /// <summary>
         /// 热更模块资源完成
@@ -298,6 +448,7 @@ namespace ZM.ZMAsset
 
             mDownLoadAssetsModuleList.Remove(assetsModule);
             mDownLoadingAssetsModuleDic.Remove(bundleModule);
+            mDownloadScheduler.Unregister(assetsModule);
         }
 
         /// <summary>
@@ -309,6 +460,7 @@ namespace ZM.ZMAsset
             {
                 WaitDownLoadModule downLoadModule = mWaitDownLoadQueue.Dequeue();
                 mQueuedModuleSet.Remove(downLoadModule.bundleModule);
+                // 只有一个模块结束并释放额度后，才从等待队列启动下一个模块。
                 StartHotAssetsModule(downLoadModule.bundleModule, downLoadModule.checkAssetsVersion);
                 return;
             }
@@ -320,43 +472,8 @@ namespace ZM.ZMAsset
         /// </summary>
         public void MultipleThreadBalancing()
         {
-            //获取当前正在下载热更资源模块的一个长度个数
-            int count = mDownLoadingAssetsModuleDic.Count;
-            // 没有活动模块时无需做线程均衡，同时避免出现除零和无效线程数。
-            if (count <= 0)
-                return;
-            //计算多线程均衡后的线程分配个数
-            //以最大下载线程个数为3 举例子
-            //1.  3/1=3 最大并发下载线程个数为3  （偶数）
-            //2.  3/2=1.5 向上取整 2 1 （奇数）
-            //3.  3/3= 1  每一个模块 都拥有一个下载线程 
-            float threadCount= MAX_THREAD_COUNT * 1.0f / count;
-            //主下载线程个数
-            int mainThreadCount = 0;
-            //通过(int) 进行强转  (int)强转：表示向下强转
-            int threadBalancingCount = (int)threadCount;
-
-            if ((int)threadCount< threadCount)
-            {
-                //向上取整
-                mainThreadCount = Mathf.CeilToInt(threadCount);
-                //向下取整
-                threadBalancingCount = Mathf.FloorToInt(threadCount);
-            }
-            //多线程均衡
-            int i = 0;
-            foreach (var item in mDownLoadingAssetsModuleDic.Values)
-            {
-                if (mainThreadCount!=0&&i==0)
-                {
-                    item.SetDownLoadThreadCount(mainThreadCount);//设置主下载线程个数
-                }
-                else
-                {
-                    item.SetDownLoadThreadCount(threadBalancingCount);
-                }
-                i++;
-            }
+            // 保留旧公开入口的兼容性，实际分配统一委托给稳定顺序调度器。
+            mDownloadScheduler.SetTotalThreadCount(MAX_THREAD_COUNT);
         }
         /// <summary>
         /// 主线程更新
