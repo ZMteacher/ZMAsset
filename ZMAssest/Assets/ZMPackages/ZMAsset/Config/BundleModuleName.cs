@@ -22,4 +22,5 @@ public class BundleModuleName
     public const string AddressAsset = "AddressAsset";
     public const string GameItem = "GameItem";
     public const string Hall = "Hall";
+    public const string RemoteAsset = "RemoteAsset";
 }
