@@ -295,8 +295,17 @@ namespace ZM.ZMAsset
         /// </summary>
         internal string GetManifestFileNameForOrchestration()
         {
-            //00 显式传入上下文平台，避免构建期间 EditorUserBuildSettings 被切换后产生错误文件名。
-            return BundleSettings.Instance.HotManifestName(_mBundleModuleName, (BuildTarget)mBuildTarget);
+            return GetCurrentManifestFileName();
+        }
+
+        /// <summary>
+        /// 根据冻结的 Unity 构建目标返回当前模块的热更清单名称。
+        /// 统一通过映射器转换，避免将 Unity 枚举数值直接写进运行时文件名；
+        /// StandaloneLinux64 的“_24.json”属于已发布的冻结兼容协议，映射器会明确保留该历史后缀。
+        /// </summary>
+        private string GetCurrentManifestFileName()
+        {
+            return BuildTargetPlatformMapper.GetHotManifestName(_mBundleModuleName, mBuildTarget);
         }
         /// <summary>
         /// 初始化
@@ -1548,7 +1557,7 @@ namespace ZM.ZMAsset
             string hotMainifestPath = string.Empty;
             if (!outPutPath.Contains("HotAssets"))
             {
-                hotMainifestPath  = outPutPath+"/" + BundleSettings.Instance.HotManifestName(_mBundleModuleName,(BuildTarget)mBuildTarget);
+                hotMainifestPath  = outPutPath+"/" + GetCurrentManifestFileName();
                 if (File.Exists(hotMainifestPath))
                 {
                     File.Decrypt(hotMainifestPath);
@@ -1557,11 +1566,11 @@ namespace ZM.ZMAsset
                 FileHelper.WriteFile(hotMainifestPath, manifestBytes);
                 return;
             }
-            hotMainifestPath  = Application.dataPath + "/../HotAssets/" + _mBundleModuleName +"/"+ BundleSettings.Instance.HotManifestName(_mBundleModuleName,(BuildTarget)mBuildTarget);
+            hotMainifestPath  = Application.dataPath + "/../HotAssets/" + _mBundleModuleName +"/"+ GetCurrentManifestFileName();
             //生成热更清单，用来对比MD5和文件下载
             FileHelper.WriteFile(hotMainifestPath, manifestBytes);
             //备份热更清单，用来版本回退
-            File.Copy(hotMainifestPath,outPutPath+BundleSettings.Instance.HotManifestName(_mBundleModuleName,(BuildTarget)mBuildTarget));
+            File.Copy(hotMainifestPath,outPutPath+GetCurrentManifestFileName());
         }
 
         /// <summary>
@@ -1573,9 +1582,13 @@ namespace ZM.ZMAsset
             if (string.IsNullOrWhiteSpace(contentPath) || !Directory.Exists(contentPath))
                 throw new DirectoryNotFoundException($"生成热更清单时找不到模块目录：{contentPath}");
             //00 保存应用版本、公告、下载地址和运行时保存目录，字段含义与旧实现一致。
+            UnityEditor.BuildTarget manifestTarget = mBuildTarget == UnityEditor.BuildTarget.NoTarget
+                ? EditorUserBuildSettings.activeBuildTarget
+                : mBuildTarget;
             HotAssetsManifest assetsManifest = new HotAssetsManifest
             {
                 appVersion = mHotAppVersion,
+                targetPlatform = BuildTargetPlatformMapper.ToRuntimeBuildTarget(manifestTarget).ToString(),
                 updateNotice = mUpdateNotice,
                 downLoadURL = BundleSettings.Instance.AssetBundleDownLoadUrl + "/HotAssets/" + _mBundleModuleName + "/" +
                               mHotAppVersion + "/" + mHotPatchVersion + "/" + mBuildTarget,
@@ -1600,11 +1613,22 @@ namespace ZM.ZMAsset
                     md5 = MD5.GetMd5FromFile(bundleInfo.FullName),
                     size = bundleInfo.Length / 1024.0f
                 };
+                if (manifestTarget == UnityEditor.BuildTarget.WebGL)
+                {
+                    // Unity Cache 的版本键只要求稳定且随内容变化；复用最终发布字节 MD5 可避免加密/复制后失配。
+                    info.bundleHash = info.md5.ToLowerInvariant();
+                    if (!BuildPipeline.GetCRCForAssetBundle(bundleInfo.FullName, out info.crc))
+                        throw new InvalidDataException($"无法计算 WebGL AssetBundle CRC：{bundleInfo.FullName}");
+                }
                 //00 每个物理文件只产生一个清单条目。
                 hotAssetsPatch.hotAssetsList.Add(info);
             }
             //00 单补丁节点保持现有协议，不引入运行时反序列化迁移。
             assetsManifest.hotAssetsPatchList.Add(hotAssetsPatch);
+            assetsManifest.manifestId = MD5.GetMd5FromString(string.Join(
+                "|",
+                hotAssetsPatch.hotAssetsList.Select(file =>
+                    $"{file.abName}:{file.md5}:{file.bundleHash}:{file.crc}")));
             return assetsManifest;
         }
 

@@ -21,6 +21,8 @@ namespace ZM.ZMAsset
     /// </summary>
     public class HotAssetsManifest
     {
+        public string targetPlatform;
+        public string manifestId;
         /// <summary>
         /// 热更公告
         /// </summary>
@@ -67,5 +69,9 @@ namespace ZM.ZMAsset
         public string md5;//文件的Md5
 
         public float size;//文件的大小
+
+        public string bundleHash;
+
+        public uint crc;
     }
 }

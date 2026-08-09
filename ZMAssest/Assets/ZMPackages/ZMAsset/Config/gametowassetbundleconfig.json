@@ -1,0 +1,38 @@
+{
+  "formatVersion": 2,
+  "moduleName": "GameTow",
+  "moduleDependencies": [
+    "Shared"
+  ],
+  "bundleInfoList": [
+    {
+      "path": "Assets/GameData/GameTow/Prefabs/Windows/GameOneWindow.prefab",
+      "crc": 3338089716,
+      "bundleName": "gametow_gameonewindow.uab",
+      "assetName": "GameOneWindow.prefab",
+      "bundleModule": "GameTow",
+      "isAddressableAsset": false,
+      "isLoadableEntry": true,
+      "bundleDependce": [
+        "shared_shared_61af1767_01.uab"
+      ],
+      "bundleDependencies": [
+        {
+          "bundleModule": "Shared",
+          "bundleName": "shared_shared_61af1767_01.uab"
+        }
+      ]
+    },
+    {
+      "path": "Assets/ZMPackages/ZMAsset/Config/gametowassetbundleconfig.json",
+      "crc": 1441772692,
+      "bundleName": "gametowbundleconfig.uab",
+      "assetName": "gametowassetbundleconfig.json",
+      "bundleModule": "GameTow",
+      "isAddressableAsset": false,
+      "isLoadableEntry": false,
+      "bundleDependce": [],
+      "bundleDependencies": []
+    }
+  ]
+}

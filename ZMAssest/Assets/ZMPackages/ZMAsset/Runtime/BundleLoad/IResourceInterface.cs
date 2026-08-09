@@ -61,6 +61,11 @@ namespace ZM.ZMAsset
         AudioClip LoadAudio(string path);
 
         TextAsset LoadTextAsset(string path);
+        /// <summary>
+        /// 异步准备场景所属 Bundle，使随后保持原签名的 LoadSceceAsync 可以立即返回 Unity AsyncOperation。
+        /// WebGL 无法在返回 AsyncOperation 的同步入口中等待网络，因此场景首次加载前必须调用该方法。
+        /// </summary>
+        UniTask<bool> PrepareSceneAsync(string path);
         AsyncOperation LoadSceceAsync(string path, LoadSceneMode loadSceneMode = LoadSceneMode.Additive);
         T LoadScriptableObject<T>(string path) where T : UnityEngine.Object;
 

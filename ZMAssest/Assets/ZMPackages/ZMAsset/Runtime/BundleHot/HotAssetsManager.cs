@@ -48,6 +48,8 @@ namespace ZM.ZMAsset
         private readonly MultiModuleHotUpdateCoordinator mTransactionCoordinator;
         private bool mIsTransactionRunning;
         private Exception mTransactionRecoveryFailure;
+        private bool mRecoveryCompleted;
+        private readonly WebGLAsyncGate mRecoveryGate = new WebGLAsyncGate(1);
         /// <summary>
         /// 所有热更资源模块
         /// </summary>
@@ -80,26 +82,43 @@ namespace ZM.ZMAsset
         public static Action<HotFileInfo> DownLoadBundleFinish;
 
         /// <summary>
-        /// 创建热更新管理器，并在任何新请求前恢复未完成的组事务。
+        /// 创建热更新管理器；首次请求前按平台异步恢复遗留事务。
         /// </summary>
-        public HotAssetsManager()
+        public HotAssetsManager() : this(AssetRuntimeBackendFactory.Current)
         {
-            mTransactionCoordinator = new MultiModuleHotUpdateCoordinator(this, mDownloadScheduler);
-            try
-            {
-                // 任何新请求开始前先处理进程中断遗留的组日志，避免在半提交状态上继续下载。
-                mTransactionCoordinator.RecoverInterruptedTransactions();
-            }
-            catch (Exception exception)
-            {
-                mTransactionRecoveryFailure = exception;
-                Debug.LogError($"恢复中断的多模块热更新事务失败，后续事务将保持可诊断失败：{exception}");
-            }
+        }
+
+        /// <summary>
+        /// 使用一组已经完成平台选择的后端服务创建热更新管理器。
+        /// 该入口同时用于平台契约测试，避免测试通过修改全局单例来模拟 WebGL。
+        /// </summary>
+        internal HotAssetsManager(AssetRuntimeBackend runtimeBackend)
+        {
+            if (runtimeBackend == null)
+                throw new ArgumentNullException(nameof(runtimeBackend));
+
+            mTransactionCoordinator = new MultiModuleHotUpdateCoordinator(
+                this,
+                mDownloadScheduler,
+                runtimeBackend.MetadataStore,
+                runtimeBackend.CommitStrategy);
         }
 
         public void HotAssets(string bundleModule, Action<string> startHotCallBack, Action<string> hotFinish, Action<string> waiteDownLoad, 
             bool isCheckAssetsVersion = true, Action<string, HotFileInfo> hotFailed = null)
         {
+            if (!mRecoveryCompleted)
+            {
+                ContinueHotAssetsAfterRecoveryAsync(
+                    bundleModule,
+                    startHotCallBack,
+                    hotFinish,
+                    waiteDownLoad,
+                    isCheckAssetsVersion,
+                    hotFailed).Forget();
+                return;
+            }
+
             if (mTransactionRecoveryFailure != null)
             {
                 Debug.LogError($"存在尚未恢复的多模块事务，已拒绝模块 {bundleModule} 热更新：{mTransactionRecoveryFailure}");
@@ -161,6 +180,8 @@ namespace ZM.ZMAsset
         /// </summary>
         public async UniTask<HotUpdateTransactionResult> HotAssetsTransactionAsync(HotUpdateTransactionRequest request)
         {
+            await EnsureRecoveryAsync();
+
             if (mTransactionRecoveryFailure != null)
             {
                 return new HotUpdateTransactionResult
@@ -202,6 +223,50 @@ namespace ZM.ZMAsset
             finally
             {
                 mIsTransactionRunning = false;
+            }
+        }
+
+        private async UniTask ContinueHotAssetsAfterRecoveryAsync(
+            string bundleModule,
+            Action<string> startHotCallBack,
+            Action<string> hotFinish,
+            Action<string> waitDownload,
+            bool checkAssetsVersion,
+            Action<string, HotFileInfo> hotFailed)
+        {
+            await EnsureRecoveryAsync();
+            HotAssets(
+                bundleModule,
+                startHotCallBack,
+                hotFinish,
+                waitDownload,
+                checkAssetsVersion,
+                hotFailed);
+        }
+
+        private async UniTask EnsureRecoveryAsync()
+        {
+            if (mRecoveryCompleted)
+                return;
+            await mRecoveryGate.WaitAsync(default);
+            try
+            {
+                if (mRecoveryCompleted)
+                    return;
+                try
+                {
+                    await mTransactionCoordinator.RecoverInterruptedTransactionsAsync();
+                }
+                catch (Exception exception)
+                {
+                    mTransactionRecoveryFailure = exception;
+                    Debug.LogError($"恢复中断的多模块热更新事务失败，后续事务将保持可诊断失败：{exception}");
+                }
+                mRecoveryCompleted = true;
+            }
+            finally
+            {
+                mRecoveryGate.Release();
             }
         }
 
@@ -328,6 +393,12 @@ namespace ZM.ZMAsset
         /// <param name="bundleModule">热更模块</param>
         public async UniTask<HotUpdateVersionCheckResult> CheckAssetsVersionAsync(string bundleModule)
         {
+            await EnsureRecoveryAsync();
+            if (mTransactionRecoveryFailure != null)
+                return HotUpdateVersionCheckResult.CreateUnableToConfirm(
+                    "上次热更新事务恢复失败，已阻止新的版本检查。",
+                    mTransactionRecoveryFailure);
+
             if (BundleSettings.Instance.bundleHotType == BundleHotEnum.NoHot)
             {
                 Debug.Log($"模块 {bundleModule} 热更类型为 NoHot，跳过热更检测");

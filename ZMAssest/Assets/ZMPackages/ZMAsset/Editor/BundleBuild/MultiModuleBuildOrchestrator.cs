@@ -37,6 +37,16 @@ namespace ZM.ZMAsset
                 ? EditorUserBuildSettings.activeBuildTarget
                 : buildTarget;
 
+            // 在资源归属扫描、配置改写和 staging 创建前完成映射与 Build Support 校验。
+            // 缺少目标平台模块时直接失败，避免构建过程中留下半成品或修改配置文件。
+            BuildTargetPlatformMapper.EnsureEditorBuildTargetSupported(resolvedBuildTarget);
+            BundleSettings bundleSettings = BundleSettings.Instance;
+            BuildTargetPlatformMapper.EnsureWebGLBuildConfiguration(
+                resolvedBuildTarget,
+                bundleSettings?.buildbundleOptions ?? BuildAssetBundleOptions.None,
+                bundleSettings?.bundleEncrypt?.isEncrypt == true,
+                bundleSettings?.AssetBundleDownLoadUrl);
+
             //00 归属、目录重叠、角色矩阵和 CRC 必须在创建 staging 或改写配置前全部通过。
             ZMBuildProgress.Report("校验模块边界", "扫描物理归属与 Business→Shared 依赖", .02f);
             yield return null;

@@ -23,14 +23,23 @@ namespace ZM.ZMAsset
 
         private readonly HotAssetsManager mManager;
         private readonly HotDownloadScheduler mScheduler;
+        private readonly IAssetMetadataStore mMetadataStore;
+        private readonly IHotUpdateCommitStrategy mCommitStrategy;
 
         /// <summary>
-        /// 创建协调器；manager 负责主线程更新，scheduler 负责跨模块共享下载预算。
+        /// 创建协调器；manager 负责主线程更新，scheduler 负责跨模块共享下载预算，metadataStore 负责平台对应的事务日志。
         /// </summary>
-        public MultiModuleHotUpdateCoordinator(HotAssetsManager manager, HotDownloadScheduler scheduler)
+        public MultiModuleHotUpdateCoordinator(
+            HotAssetsManager manager,
+            HotDownloadScheduler scheduler,
+            IAssetMetadataStore metadataStore,
+            IHotUpdateCommitStrategy commitStrategy)
         {
-            mManager = manager;
-            mScheduler = scheduler;
+            mManager = manager ?? throw new ArgumentNullException(nameof(manager));
+            mScheduler = scheduler ?? throw new ArgumentNullException(nameof(scheduler));
+            // 使用管理器创建时已经选定的同一平台服务，避免协调器再次读取全局工厂后发生后端混用。
+            mMetadataStore = metadataStore ?? throw new ArgumentNullException(nameof(metadataStore));
+            mCommitStrategy = commitStrategy ?? throw new ArgumentNullException(nameof(commitStrategy));
         }
 
         /// <summary>
@@ -44,6 +53,8 @@ namespace ZM.ZMAsset
             string journalPath = GetJournalPath(transactionId);
             List<HotAssetsModule> modules = orderedModules.Select(mManager.GetOrNewAssetModule).ToList();
             List<string> changedModules = new List<string>();
+            List<HotUpdateCommitContext> changedContexts = new List<HotUpdateCommitContext>();
+            bool usesWebGLPointer = mCommitStrategy is WebGLVersionPointerCommitStrategy;
             string failedModule = null;
 
             // 多模块原子事务要求组内模块尚未进入使用期，否则跨模块依赖的内存配置无法在失败时整体回退。
@@ -72,7 +83,7 @@ namespace ZM.ZMAsset
             try
             {
                 // 先落组日志，再允许任一模块创建 staging；进程中断时启动恢复知道本次事务属于哪些模块。
-                WriteJournal(journalPath, journal);
+                await WriteJournalAsync(journalPath, journal);
                 int batchSize = Math.Max(1, mScheduler.ModuleConcurrency);
                 for (int offset = 0; offset < modules.Count; offset += batchSize)
                 {
@@ -139,17 +150,30 @@ namespace ZM.ZMAsset
                 }
 
                 journal.state = "Committing";
-                WriteJournal(journalPath, journal);
+                await WriteJournalAsync(journalPath, journal);
                 foreach (HotAssetsModule module in modules)
                 {
                     request.CancellationToken.ThrowIfCancellationRequested();
                     failedModule = module.CurBundleModuleName;
                     // 所有模块准备完成后才进入提交阶段，避免部分模块提前对业务可见。
-                    module.PromoteCoordinatedTransaction();
+                    await module.PrepareCoordinatedCommitAsync();
+                }
+
+
+                changedContexts = modules
+                    .Select(module => module.TransactionContext)
+                    .Where(context => context != null && !string.IsNullOrWhiteSpace(context.CandidateManifestId))
+                    .ToList();
+                if (usesWebGLPointer && changedContexts.Count > 0)
+                {
+                    await ((WebGLVersionPointerCommitStrategy)mCommitStrategy).CommitGroupAsync(
+                        changedContexts,
+                        transactionId,
+                        orderedModules);
                 }
 
                 journal.state = "Initializing";
-                WriteJournal(journalPath, journal);
+                await WriteJournalAsync(journalPath, journal);
                 foreach (HotAssetsModule module in modules)
                 {
                     request.CancellationToken.ThrowIfCancellationRequested();
@@ -160,9 +184,11 @@ namespace ZM.ZMAsset
                 }
 
                 // 先删除组日志声明整组提交成功，再清理各模块备份；若进程在清理中退出，模块日志会向前完成新版本。
-                DeleteJournal(journalPath);
+                if (usesWebGLPointer)
+                    await ((WebGLVersionPointerCommitStrategy)mCommitStrategy).FinalizeGroupAsync(transactionId);
+                await DeleteJournalAsync(journalPath);
                 foreach (HotAssetsModule module in modules)
-                    module.FinalizeCoordinatedTransaction();
+                    await module.FinalizeCoordinatedTransactionAsync(usesWebGLPointer);
 
                 return CreateResult(true, false, transactionId, orderedModules, changedModules, null, "多模块热更新事务已完成。", null);
             }
@@ -171,6 +197,20 @@ namespace ZM.ZMAsset
                 bool isCancelled = exception is OperationCanceledException;
                 Debug.LogError($"多模块热更新事务失败，事务：{transactionId}，模块：{failedModule ?? "准备阶段"}，异常：{exception}");
                 Exception rollbackFailure = null;
+
+                if (usesWebGLPointer && changedContexts.Count > 0)
+                {
+                    try
+                    {
+                        await ((WebGLVersionPointerCommitStrategy)mCommitStrategy).RollbackGroupAsync(
+                            changedContexts,
+                            transactionId);
+                    }
+                    catch (Exception rollbackException)
+                    {
+                        rollbackFailure = rollbackException;
+                    }
+                }
 
                 // 逆序回滚与显式提交顺序相反，先撤销消费者，再撤销它依赖的 Shared。
                 for (int index = modules.Count - 1; index >= 0; index--)
@@ -193,7 +233,7 @@ namespace ZM.ZMAsset
                 {
                     try
                     {
-                        DeleteJournal(journalPath);
+                        await DeleteJournalAsync(journalPath);
                     }
                     catch (Exception journalException)
                     {
@@ -225,31 +265,33 @@ namespace ZM.ZMAsset
         /// <summary>
         /// 在任何新热更新开始前恢复遗留组事务；组日志存在即整组逆序回滚，不猜测提交进度。
         /// </summary>
-        public void RecoverInterruptedTransactions()
+        public async UniTask RecoverInterruptedTransactionsAsync()
         {
             string journalDirectory = GetJournalDirectory();
-            if (!Directory.Exists(journalDirectory))
+            if (mCommitStrategy is WebGLVersionPointerCommitStrategy webGLStrategy)
+            {
+                await webGLStrategy.RecoverAllAsync();
+                foreach (string journalPath in await mMetadataStore.GetFilesAsync(journalDirectory, "*.group.transaction"))
+                    await DeleteJournalAsync(journalPath);
                 return;
-
+            }
             // 写日志期间退出时优先把完整临时日志提升为正式日志，再执行同一条整组回滚流程。
-            foreach (string writingPath in Directory.GetFiles(journalDirectory, "*.group.transaction.writing"))
+            foreach (string writingPath in mMetadataStore.GetFiles(journalDirectory, "*.group.transaction.writing"))
             {
                 string journalPath = writingPath.Substring(0, writingPath.Length - ".writing".Length);
-                if (File.Exists(journalPath))
-                    File.Delete(writingPath);
-                else
-                    File.Move(writingPath, journalPath);
+                mMetadataStore.RecoverAtomicWrite(journalPath);
             }
 
-            foreach (string journalPath in Directory.GetFiles(journalDirectory, "*.group.transaction"))
+            foreach (string journalPath in mMetadataStore.GetFiles(journalDirectory, "*.group.transaction"))
             {
-                GroupTransactionJournal journal = JsonConvert.DeserializeObject<GroupTransactionJournal>(File.ReadAllText(journalPath));
+                GroupTransactionJournal journal =
+                    JsonConvert.DeserializeObject<GroupTransactionJournal>(mMetadataStore.ReadText(journalPath));
                 if (journal?.orderedModules == null || journal.orderedModules.Count == 0)
                     throw new InvalidDataException($"多模块热更新事务日志损坏：{journalPath}");
 
                 for (int index = journal.orderedModules.Count - 1; index >= 0; index--)
                     mManager.GetOrNewAssetModule(journal.orderedModules[index]).RollbackInterruptedGroupTransaction();
-                DeleteJournal(journalPath);
+                await DeleteJournalAsync(journalPath);
                 Debug.LogWarning($"已回滚上次中断的多模块热更新事务：{journal.transactionId}");
             }
         }
@@ -304,23 +346,17 @@ namespace ZM.ZMAsset
             return Path.Combine(GetJournalDirectory(), $"{transactionId}.group.transaction");
         }
 
-        private static void WriteJournal(string path, GroupTransactionJournal journal)
+        private UniTask WriteJournalAsync(string path, GroupTransactionJournal journal)
         {
-            Directory.CreateDirectory(Path.GetDirectoryName(path));
-            string writingPath = path + ".writing";
-            File.WriteAllText(writingPath, JsonConvert.SerializeObject(journal, Formatting.Indented));
-            if (File.Exists(path))
-                File.Replace(writingPath, path, null);
-            else
-                File.Move(writingPath, path);
+            return mMetadataStore.WriteTextAtomicallyAsync(
+                path,
+                JsonConvert.SerializeObject(journal, Formatting.Indented));
         }
 
-        private static void DeleteJournal(string path)
+        private async UniTask DeleteJournalAsync(string path)
         {
-            if (File.Exists(path))
-                File.Delete(path);
-            if (File.Exists(path + ".writing"))
-                File.Delete(path + ".writing");
+            await mMetadataStore.DeleteIfExistsAsync(path);
+            await mMetadataStore.DeleteIfExistsAsync(path + ".writing");
         }
 
     }

@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.IO;
 using Cysharp.Threading.Tasks;
 using UnityEngine;
+using System.Threading;
 
 namespace ZM.ZMAsset
 {
@@ -14,6 +15,12 @@ namespace ZM.ZMAsset
         private readonly Dictionary<string, RemoteAssetModule> mModules = new Dictionary<string, RemoteAssetModule>(StringComparer.Ordinal);
         
         private readonly object mModuleLock = new object();
+
+        private readonly IAssetDownloadService mDownloadService =
+            AssetRuntimeBackendFactory.Current.DownloadService;
+
+        private readonly IHotUpdateCommitStrategy mCommitStrategy =
+            AssetRuntimeBackendFactory.Current.CommitStrategy;
 
         /// <summary>
         /// 进行中下载的实时进度表，key 为 "模块名|文件名"。
@@ -57,7 +64,10 @@ namespace ZM.ZMAsset
         internal async UniTask<bool> InitializeRemoteModuleAsync(string moduleName)
         {
             RemoteAssetModule module = GetOrCreateModule(moduleName);
-            await module.InitializationGate.WaitAsync();
+            if (module.UsesBrowserCache)
+                await module.BrowserInitializationGate.WaitAsync();
+            else
+                await module.InitializationGate.WaitAsync();
             try
             {
                 if (module.IsInitialized)
@@ -86,7 +96,10 @@ namespace ZM.ZMAsset
             }
             finally
             {
-                module.InitializationGate.Release();
+                if (module.UsesBrowserCache)
+                    module.BrowserInitializationGate.Release();
+                else
+                    module.InitializationGate.Release();
             }
         }
 
@@ -155,7 +168,7 @@ namespace ZM.ZMAsset
         /// 与按需加载并发时通过文件级门互斥：先到先下，后者拿锁重检后直接复用，不会重复下载。
         /// 串行逐个下载是刻意设计：闲时预热不应抢占前台加载的带宽。
         /// </summary>
-        internal async UniTask<RemotePreDownloadResult> PreDownloadModuleAsync(string moduleName, Action<float> onProgress = null)
+        internal async UniTask<RemotePreDownloadResult> PreDownloadModuleAsync(string moduleName, Action<float> onProgress = null, CancellationToken cancellationToken = default)
         {
             if (!await InitializeRemoteModuleAsync(moduleName))
             {
@@ -165,13 +178,13 @@ namespace ZM.ZMAsset
 
             RemoteAssetModule module = GetOrCreateModule(moduleName);
             List<HotFileInfo> pendingFiles = module.GetFilesNeedingDownloadSnapshot();
-            return await DownloadFilesWithProgressAsync(module, pendingFiles, onProgress);
+            return await DownloadFilesWithProgressAsync(module, pendingFiles, onProgress, cancellationToken);
         }
 
         /// <summary>
         /// 闲时预下载指定资源的主 Bundle 及其同模块依赖；跨模块依赖由对应模块自行按需准备，不在本模块预下载范围。
         /// </summary>
-        internal async UniTask<RemotePreDownloadResult> PreDownloadAssetAsync(string moduleName, uint crc, Action<float> onProgress = null)
+        internal async UniTask<RemotePreDownloadResult> PreDownloadAssetAsync(string moduleName, uint crc, Action<float> onProgress = null, CancellationToken cancellationToken = default)
         {
             if (!await InitializeRemoteModuleAsync(moduleName))
             {
@@ -195,7 +208,7 @@ namespace ZM.ZMAsset
 
             RemoteAssetModule module = GetOrCreateModule(moduleName);
             List<HotFileInfo> pendingFiles = CollectPendingFiles(module, item);
-            return await DownloadFilesWithProgressAsync(module, pendingFiles, onProgress);
+            return await DownloadFilesWithProgressAsync(module, pendingFiles, onProgress, cancellationToken);
         }
 
         /// <summary>
@@ -226,7 +239,8 @@ namespace ZM.ZMAsset
         private async UniTask<RemotePreDownloadResult> DownloadFilesWithProgressAsync(
             RemoteAssetModule module,
             List<HotFileInfo> pendingFiles,
-            Action<float> onProgress)
+            Action<float> onProgress,
+            CancellationToken cancellationToken)
         {
             int totalCount = pendingFiles.Count;
             int successCount = 0;
@@ -234,12 +248,14 @@ namespace ZM.ZMAsset
 
             for (int i = 0; i < totalCount; i++)
             {
+                cancellationToken.ThrowIfCancellationRequested();
                 HotFileInfo fileInfo = pendingFiles[i];
                 int completedCount = i;
                 bool succeeded = await EnsureBundleReadyWithProgressAsync(
                     module,
                     fileInfo.abName,
-                    onProgress == null ? null : value => ReportProgressSafely(onProgress, (completedCount + value) / totalCount, module.ModuleName));
+                    onProgress == null ? null : value => ReportProgressSafely(onProgress, (completedCount + value) / totalCount, module.ModuleName),
+                    cancellationToken);
 
                 if (succeeded)
                     successCount++;
@@ -259,7 +275,8 @@ namespace ZM.ZMAsset
         private async UniTask<bool> EnsureBundleReadyWithProgressAsync(
             RemoteAssetModule module,
             string bundleName,
-            Action<float> onFileProgress)
+            Action<float> onFileProgress,
+            CancellationToken cancellationToken = default)
         {
             bool finished = false;
 
@@ -267,7 +284,7 @@ namespace ZM.ZMAsset
             {
                 try
                 {
-                    return await EnsureBundleReadyAsync(module, bundleName);
+                    return await EnsureBundleReadyAsync(module, bundleName, cancellationToken);
                 }
                 finally
                 {
@@ -276,18 +293,33 @@ namespace ZM.ZMAsset
             }
 
             UniTask<bool> ensureTask = RunEnsure();
-            while (!finished)
+            try
             {
-                if (onFileProgress != null &&
-                    TryGetDownloadProgress(module.ModuleName, bundleName, out float fileProgress))
+                while (!finished)
                 {
-                    onFileProgress(fileProgress);
+                    if (onFileProgress != null &&
+                        TryGetDownloadProgress(module.ModuleName, bundleName, out float fileProgress))
+                    {
+                        onFileProgress(fileProgress);
+                    }
+
+                    await UniTask.Delay(100, cancellationToken: cancellationToken);
                 }
 
-                await UniTask.Delay(100);
+                return await ensureTask;
             }
-
-            return await ensureTask;
+            catch (OperationCanceledException)
+            {
+                // 取消轮询时仍观察底层任务，确保文件门和网络请求均已退出后再向上抛出。
+                try
+                {
+                    await ensureTask;
+                }
+                catch (OperationCanceledException)
+                {
+                }
+                throw;
+            }
         }
 
         /// <summary>
@@ -339,16 +371,32 @@ namespace ZM.ZMAsset
             }
         }
 
+        internal bool TryResolveRemoteLocation(string moduleName, string bundleName, out AssetBundleLocation location)
+        {
+            lock (mModuleLock)
+            {
+                if (mModules.TryGetValue(moduleName, out RemoteAssetModule module) &&
+                    module.TryCreateRemoteLocation(bundleName, out location))
+                    return true;
+            }
+
+            location = default;
+            return false;
+        }
+
         /// <summary>
         /// Manifest 未标记为缺失时直接复用本地文件；缺失时下载、MD5 校验并原子切换。
         /// </summary>
-        private async UniTask<bool> EnsureBundleReadyAsync(RemoteAssetModule module, string bundleName)
+        private async UniTask<bool> EnsureBundleReadyAsync(RemoteAssetModule module, string bundleName, CancellationToken cancellationToken = default)
         {
             if (string.IsNullOrWhiteSpace(bundleName))
                 return false;
 
+            if (module.UsesBrowserCache)
+                return await EnsureBrowserBundleReadyAsync(module, bundleName, cancellationToken);
+
             System.Threading.SemaphoreSlim fileGate = module.GetFileGate(bundleName);
-            await fileGate.WaitAsync();
+            await fileGate.WaitAsync(cancellationToken);
             try
             {
                 // 获得锁后必须重新检查，前一个等待者可能已经完成下载和原子切换。
@@ -363,7 +411,35 @@ namespace ZM.ZMAsset
                     return true;
                 }
 
-                return await DownloadAndPromoteAsync(module, fileInfo);
+                return await DownloadAndPromoteAsync(module, fileInfo, cancellationToken);
+            }
+            finally
+            {
+                fileGate.Release();
+            }
+        }
+
+        private async UniTask<bool> EnsureBrowserBundleReadyAsync(
+            RemoteAssetModule module,
+            string bundleName,
+            CancellationToken cancellationToken)
+        {
+            WebGLAsyncGate fileGate = module.GetBrowserFileGate(bundleName);
+            await fileGate.WaitAsync(cancellationToken);
+            try
+            {
+                if (!module.TryGetFileNeedingDownload(bundleName, out HotFileInfo fileInfo))
+                {
+                    if (!module.TryGetRemoteFile(bundleName, out _))
+                    {
+                        Debug.LogError($"远端 Manifest 未声明 Bundle，模块：{module.ModuleName}，文件：{bundleName}");
+                        return false;
+                    }
+
+                    return true;
+                }
+
+                return await DownloadAndPromoteAsync(module, fileInfo, cancellationToken);
             }
             finally
             {
@@ -374,28 +450,52 @@ namespace ZM.ZMAsset
         /// <summary>
         /// 下载器只写临时目录并完成 MD5 校验，随后再将同卷文件原子替换到正式目录。
         /// </summary>
-        private async UniTask<bool> DownloadAndPromoteAsync(RemoteAssetModule module, HotFileInfo fileInfo)
+        private async UniTask<bool> DownloadAndPromoteAsync(RemoteAssetModule module, HotFileInfo fileInfo, CancellationToken cancellationToken = default)
         {
+            if (module.UsesBrowserCache)
+            {
+                string browserProgressKey = BuildProgressKey(module.ModuleName, fileInfo.abName);
+                AssetDownloadFileRequest browserRequest = new AssetDownloadFileRequest(
+                    $"{module.ModuleName}_webgl_remote_{Guid.NewGuid():N}",
+                    module.ModuleName,
+                    fileInfo,
+                    module.DownloadUrl,
+                    null,
+                    value => mDownloadProgress.AddOrUpdate(browserProgressKey, value, (_, oldValue) => Math.Max(oldValue, value)),
+                    cancellationToken);
+                try
+                {
+                    bool succeeded = await mDownloadService.DownloadFileAsync(browserRequest);
+                    if (succeeded) module.MarkFileReady(fileInfo.abName);
+                    return succeeded;
+                }
+                finally
+                {
+                    mDownloadProgress.TryRemove(browserProgressKey, out _);
+                }
+            }
+
             Directory.CreateDirectory(module.StagingPath);
             string stagingPath = Path.Combine(module.StagingPath, fileInfo.abName);
             if (File.Exists(stagingPath))
                 File.Delete(stagingPath);
 
-            DownLoadThread download = new DownLoadThread(
+            // 进度只反映"本次下载尝试"；任务结束（成功/失败/异常）都必须移除，避免查询方读到过期进度。
+            string progressKey = BuildProgressKey(module.ModuleName, fileInfo.abName);
+            string operationId = $"{module.ModuleName}_remote_{Guid.NewGuid():N}";
+            AssetDownloadFileRequest downloadRequest = new AssetDownloadFileRequest(
+                operationId,
                 module.ModuleName,
                 fileInfo,
                 module.DownloadUrl,
-                module.StagingPath);
-
-            // 进度只反映"本次下载尝试"；任务结束（成功/失败/异常）都必须移除，避免查询方读到过期进度。
-            string progressKey = BuildProgressKey(module.ModuleName, fileInfo.abName);
-            // 重试会从头下载同一文件；进度只增不减，避免业务进度条回退跳变。
-            download.OnDownloadProgress = (_, _, value) =>
-                mDownloadProgress.AddOrUpdate(progressKey, value, (_, oldValue) => Math.Max(oldValue, value));
+                module.StagingPath,
+                value =>
+                    // 重试会从头下载同一文件；进度只增不减，避免业务进度条回退跳变。
+                    mDownloadProgress.AddOrUpdate(progressKey, value, (_, oldValue) => Math.Max(oldValue, value)));
             bool downloaded;
             try
             {
-                downloaded = await download.StartDownLoadAsync();
+                downloaded = await mDownloadService.DownloadFileAsync(downloadRequest);
             }
             finally
             {
@@ -408,14 +508,20 @@ namespace ZM.ZMAsset
             try
             {
                 string destinationPath = Path.Combine(module.AssetSavePath, fileInfo.abName);
-                RemoteAssetModule.PromoteVerifiedFile(stagingPath, destinationPath);
+                mCommitStrategy.PromoteVerifiedFile(
+                    stagingPath,
+                    destinationPath,
+                    operationId,
+                    module.ModuleName,
+                    fileInfo.abName);
                 module.MarkFileReady(fileInfo.abName);
                 return true;
             }
             catch (Exception exception)
             {
                 Debug.LogError(
-                    $"远端资源原子切换失败，模块：{module.ModuleName}，文件：{fileInfo.abName}，异常：{exception}");
+                    $"远端资源原子切换失败，平台：{AssetRuntimeBackendFactory.Current.PlatformKind}，" +
+                    $"模块：{module.ModuleName}，文件：{fileInfo.abName}，操作：{operationId}，异常：{exception}");
                 return false;
             }
         }

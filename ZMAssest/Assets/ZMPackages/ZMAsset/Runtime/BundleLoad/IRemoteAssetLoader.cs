@@ -1,6 +1,7 @@
 using System;
 using Cysharp.Threading.Tasks;
 using UnityEngine;
+using System.Threading;
 
 namespace ZM.ZMAsset
 {
@@ -24,11 +25,11 @@ namespace ZM.ZMAsset
         /// <summary>
         /// 闲时预下载整个模块尚未就绪的远端文件；串行下载，不抢占前台加载带宽。
         /// </summary>
-        UniTask<RemotePreDownloadResult> PreDownloadModuleAsync(string moduleName, Action<float> onProgress = null);
+        UniTask<RemotePreDownloadResult> PreDownloadModuleAsync(string moduleName, Action<float> onProgress = null, CancellationToken cancellationToken = default);
 
         /// <summary>
         /// 闲时预下载指定资源的主 Bundle 及其同模块依赖。
         /// </summary>
-        UniTask<RemotePreDownloadResult> PreDownloadAssetAsync(string path, string moduleName, Action<float> onProgress = null);
+        UniTask<RemotePreDownloadResult> PreDownloadAssetAsync(string path, string moduleName, Action<float> onProgress = null, CancellationToken cancellationToken = default);
     }
 }

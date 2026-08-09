@@ -14,7 +14,9 @@ using System.Collections;
 using System.Collections.Generic;
 using System.IO;
 using System.Reflection;
+#if UNITY_EDITOR
 using UnityEditor;
+#endif
 using UnityEngine;
 using ZM.ZMAsset;
 /// <summary>
@@ -213,6 +215,10 @@ public enum BuildTarget
     // 摘要:
     //     Build a Windows 64-bit standalone.
     StandaloneWindows64 = 19,
+    //
+    // 摘要:
+    //     Build a WebGL player.
+    WebGL = 20,
 }
 
 //

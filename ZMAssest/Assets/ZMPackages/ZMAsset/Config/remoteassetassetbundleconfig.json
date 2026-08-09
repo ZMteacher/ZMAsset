@@ -1,0 +1,117 @@
+{
+  "formatVersion": 2,
+  "moduleName": "RemoteAsset",
+  "moduleDependencies": [],
+  "bundleInfoList": [
+    {
+      "path": "Assets/GameData/RemoteAsset/Itemicon/icon1.png",
+      "crc": 2831808110,
+      "bundleName": "remoteasset_icon1.uab",
+      "assetName": "icon1.png",
+      "bundleModule": "RemoteAsset",
+      "isAddressableAsset": true,
+      "isLoadableEntry": true,
+      "bundleDependce": [],
+      "bundleDependencies": []
+    },
+    {
+      "path": "Assets/GameData/RemoteAsset/Itemicon/icon2.png",
+      "crc": 4016671934,
+      "bundleName": "remoteasset_icon2.uab",
+      "assetName": "icon2.png",
+      "bundleModule": "RemoteAsset",
+      "isAddressableAsset": true,
+      "isLoadableEntry": true,
+      "bundleDependce": [],
+      "bundleDependencies": []
+    },
+    {
+      "path": "Assets/GameData/RemoteAsset/Itemicon/icon3.png",
+      "crc": 3523847438,
+      "bundleName": "remoteasset_icon3.uab",
+      "assetName": "icon3.png",
+      "bundleModule": "RemoteAsset",
+      "isAddressableAsset": true,
+      "isLoadableEntry": true,
+      "bundleDependce": [],
+      "bundleDependencies": []
+    },
+    {
+      "path": "Assets/GameData/RemoteAsset/Itemicon/icon4.png",
+      "crc": 1613330718,
+      "bundleName": "remoteasset_icon4.uab",
+      "assetName": "icon4.png",
+      "bundleModule": "RemoteAsset",
+      "isAddressableAsset": true,
+      "isLoadableEntry": true,
+      "bundleDependce": [],
+      "bundleDependencies": []
+    },
+    {
+      "path": "Assets/GameData/RemoteAsset/Itemicon/icon5.png",
+      "crc": 1565085870,
+      "bundleName": "remoteasset_icon5.uab",
+      "assetName": "icon5.png",
+      "bundleModule": "RemoteAsset",
+      "isAddressableAsset": true,
+      "isLoadableEntry": true,
+      "bundleDependce": [],
+      "bundleDependencies": []
+    },
+    {
+      "path": "Assets/GameData/RemoteAsset/Itemicon/icon6.png",
+      "crc": 451488382,
+      "bundleName": "remoteasset_icon6.uab",
+      "assetName": "icon6.png",
+      "bundleModule": "RemoteAsset",
+      "isAddressableAsset": true,
+      "isLoadableEntry": true,
+      "bundleDependce": [],
+      "bundleDependencies": []
+    },
+    {
+      "path": "Assets/GameData/RemoteAsset/Itemicon/icon7.png",
+      "crc": 663290830,
+      "bundleName": "remoteasset_icon7.uab",
+      "assetName": "icon7.png",
+      "bundleModule": "RemoteAsset",
+      "isAddressableAsset": true,
+      "isLoadableEntry": true,
+      "bundleDependce": [],
+      "bundleDependencies": []
+    },
+    {
+      "path": "Assets/GameData/RemoteAsset/Itemicon/icon8.png",
+      "crc": 2782499871,
+      "bundleName": "remoteasset_icon8.uab",
+      "assetName": "icon8.png",
+      "bundleModule": "RemoteAsset",
+      "isAddressableAsset": true,
+      "isLoadableEntry": true,
+      "bundleDependce": [],
+      "bundleDependencies": []
+    },
+    {
+      "path": "Assets/GameData/RemoteAsset/Itemicon/icon9.png",
+      "crc": 2562309551,
+      "bundleName": "remoteasset_icon9.uab",
+      "assetName": "icon9.png",
+      "bundleModule": "RemoteAsset",
+      "isAddressableAsset": true,
+      "isLoadableEntry": true,
+      "bundleDependce": [],
+      "bundleDependencies": []
+    },
+    {
+      "path": "Assets/ZMPackages/ZMAsset/Config/remoteassetassetbundleconfig.json",
+      "crc": 1618371050,
+      "bundleName": "remoteassetbundleconfig.uab",
+      "assetName": "remoteassetassetbundleconfig.json",
+      "bundleModule": "RemoteAsset",
+      "isAddressableAsset": true,
+      "isLoadableEntry": false,
+      "bundleDependce": [],
+      "bundleDependencies": []
+    }
+  ]
+}

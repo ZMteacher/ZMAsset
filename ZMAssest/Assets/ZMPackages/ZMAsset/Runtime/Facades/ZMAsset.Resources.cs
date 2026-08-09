@@ -70,6 +70,16 @@ namespace ZM.ZMAsset
             }
 
             /// <summary>
+            /// 异步准备场景所属 Bundle；WebGL 首次加载场景前必须等待该方法成功。
+            /// 准备完成后继续调用现有 LoadSceneAsync，即可立即取得 Unity AsyncOperation。
+            /// </summary>
+            public static UniTask<bool> PrepareSceneAsync(string path)
+            {
+                ValidateAssetPath(path);
+                return InitializedInstance.mResource.PrepareSceneAsync(path);
+            }
+
+            /// <summary>
             /// 同步加载 TextAsset。
             /// </summary>
             public static TextAsset LoadTextAsset(string path)
@@ -89,6 +99,7 @@ namespace ZM.ZMAsset
 
             /// <summary>
             /// 异步加载场景，并返回 Unity 原生 AsyncOperation 供调用方观察进度。
+            /// WebGL 首次加载该场景前需要先等待 PrepareSceneAsync。
             /// </summary>
             public static AsyncOperation LoadSceneAsync(string path, LoadSceneMode mode = LoadSceneMode.Additive)
             {

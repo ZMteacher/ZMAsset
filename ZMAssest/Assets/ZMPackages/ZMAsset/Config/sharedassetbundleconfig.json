@@ -1,0 +1,62 @@
+{
+  "formatVersion": 2,
+  "moduleName": "Shared",
+  "moduleDependencies": [],
+  "bundleInfoList": [
+    {
+      "path": "Assets/GameData/Shared/Textures/Bg/Texture.png",
+      "crc": 3836276111,
+      "bundleName": "shared_shared_61af1767_01.uab",
+      "assetName": "Texture.png",
+      "bundleModule": "Shared",
+      "isAddressableAsset": false,
+      "isLoadableEntry": false,
+      "bundleDependce": [],
+      "bundleDependencies": []
+    },
+    {
+      "path": "Assets/GameData/Shared/Effects/Materials/CuboMaterial.mat",
+      "crc": 1007012248,
+      "bundleName": "shared_cubeshared.uab",
+      "assetName": "CuboMaterial.mat",
+      "bundleModule": "Shared",
+      "isAddressableAsset": false,
+      "isLoadableEntry": false,
+      "bundleDependce": [],
+      "bundleDependencies": []
+    },
+    {
+      "path": "Assets/GameData/Shared/Effects/Materials/SphereMaterial.mat",
+      "crc": 615314163,
+      "bundleName": "shared_cubeshared.uab",
+      "assetName": "SphereMaterial.mat",
+      "bundleModule": "Shared",
+      "isAddressableAsset": false,
+      "isLoadableEntry": false,
+      "bundleDependce": [],
+      "bundleDependencies": []
+    },
+    {
+      "path": "Assets/GameData/Shared/Effects/Prefabs/CubeShared.prefab",
+      "crc": 2284373816,
+      "bundleName": "shared_cubeshared.uab",
+      "assetName": "CubeShared.prefab",
+      "bundleModule": "Shared",
+      "isAddressableAsset": false,
+      "isLoadableEntry": true,
+      "bundleDependce": [],
+      "bundleDependencies": []
+    },
+    {
+      "path": "Assets/ZMPackages/ZMAsset/Config/sharedassetbundleconfig.json",
+      "crc": 321399817,
+      "bundleName": "sharedbundleconfig.uab",
+      "assetName": "sharedassetbundleconfig.json",
+      "bundleModule": "Shared",
+      "isAddressableAsset": false,
+      "isLoadableEntry": false,
+      "bundleDependce": [],
+      "bundleDependencies": []
+    }
+  ]
+}

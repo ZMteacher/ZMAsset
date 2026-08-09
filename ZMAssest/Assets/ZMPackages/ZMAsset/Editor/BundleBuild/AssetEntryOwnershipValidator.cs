@@ -143,13 +143,14 @@ namespace ZM.ZMAsset
         private const int MaxReportedViolationCount = 50;
 
         /// <summary>
-        /// 00 保存一条配置目录的唯一拥有者；assetDirectory 始终使用 Assets/... 规范路径。
+        /// 保存一条配置目录的唯一拥有者；assetDirectory 始终使用 Assets/... 规范路径。
         /// </summary>
         private sealed class DirectoryOwner
         {
             public string moduleName;
             public string ruleName;
             public string assetDirectory;
+            public bool isModuleRoot;
         }
 
         /// <summary>
@@ -394,7 +395,12 @@ namespace ZM.ZMAsset
             string moduleRootDirectory = TryResolveConventionalModuleRoot(moduleName);
             //00 同名目录存在时只登记一次，避免多个收集规则在同一模块内产生虚假的父子重叠。
             if (moduleRootDirectory != null)
-                RegisterDirectoryOwner(moduleName, "模块资源根目录", moduleRootDirectory, directoryOwners);
+                RegisterDirectoryOwner(
+                    moduleName,
+                    "模块资源根目录",
+                    moduleRootDirectory,
+                    directoryOwners,
+                    true);
             //00 未知策略值可能来自损坏或未来版本配置，即使当前目录尚无 Prefab 也不能静默通过构建门禁。
             if (module.prefabDependencyEntryMode != PrefabDependencyEntryMode.PrefabOnly &&
                 module.prefabDependencyEntryMode != PrefabDependencyEntryMode.PrefabAndDependencies)
@@ -530,14 +536,16 @@ namespace ZM.ZMAsset
             string moduleName,
             string ruleName,
             string assetDirectory,
-            List<DirectoryOwner> directoryOwners)
+            List<DirectoryOwner> directoryOwners,
+            bool isModuleRoot = false)
         {
             //00 保存规范路径，后续使用带“/”边界的前缀比较，避免 Assets/GameA 误匹配 Assets/GameAB。
             directoryOwners.Add(new DirectoryOwner
             {
                 moduleName = moduleName,
                 ruleName = ruleName,
-                assetDirectory = NormalizeAssetPath(assetDirectory).TrimEnd('/')
+                assetDirectory = NormalizeAssetPath(assetDirectory).TrimEnd('/'),
+                isModuleRoot = isModuleRoot
             });
         }
 
@@ -589,7 +597,12 @@ namespace ZM.ZMAsset
             //00 规则目录可以等于模块根目录，也可以位于其任意深度子目录，但绝不能越过模块边界收集资源。
             bool isInsideModuleRoot = string.Equals(ruleDirectory, moduleRootDirectory, StringComparison.OrdinalIgnoreCase) ||
                                       ruleDirectory.StartsWith(moduleRootDirectory + "/", StringComparison.OrdinalIgnoreCase);
-            if (isInsideModuleRoot) return;
+            if (isInsideModuleRoot)
+            {
+                // 模块根解决“资源物理属于谁”，规则目录解决“同一模块内是否被两条构建规则重复声明”，两者不能互相替代。
+                RegisterDirectoryOwner(moduleName, ruleName, ruleDirectory, directoryOwners);
+                return;
+            }
 
             //00 越界配置会重新引入跨模块物理所有权二义，因此在扫描 AssetDatabase 前给出可操作错误。
             throw new InvalidOperationException(
@@ -713,6 +726,12 @@ namespace ZM.ZMAsset
                     DirectoryOwner right = orderedOwners[rightIndex];
                     //00 只有相等或带目录边界的前缀关系才算重叠，名称相似但不嵌套不应误报。
                     if (!DirectoriesOverlap(left.assetDirectory, right.assetDirectory)) continue;
+                    // 同一模块的约定根目录必然包含它自己的规则目录，这是物理归属与构建规则的正常双重描述。
+                    // 只有“根目录 ↔ 本模块规则”可以豁免；两条规则之间或不同模块之间仍必须阻止。
+                    bool isSameModuleRootAndRulePair =
+                        string.Equals(left.moduleName, right.moduleName, StringComparison.OrdinalIgnoreCase) &&
+                        left.isModuleRoot != right.isModuleRoot;
+                    if (isSameModuleRootAndRulePair) continue;
                     //00 目录二义会使 Entry=false 依赖无法确定所有者，因此在任何依赖扫描前立即终止。
                     throw new InvalidOperationException(
                         "资源模块配置目录发生相等或嵌套重叠，无法确定唯一物理归属。\n" +

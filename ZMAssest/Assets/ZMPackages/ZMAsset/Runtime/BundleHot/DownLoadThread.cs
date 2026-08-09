@@ -47,14 +47,14 @@ namespace ZM.ZMAsset
         public Action<DownLoadThread, HotFileInfo, float> OnDownloadProgress;
 
         /// <summary>
-        /// 当前热更的资源模块
+        /// 当前热更资源所属模块名称。
         /// </summary>
         private string _mCurBundleModuleName;
 
         /// <summary>
-        /// 当前热更的资源模块
+        /// 下载字节统计回调；为空时表示调用方不需要累计批次下载量。
         /// </summary>
-        private HotAssetsModule mCurHotAssetsModule;
+        private Action<int> mBytesDownloaded;
 
         /// <summary>
         /// 当前热更的文件信息
@@ -100,21 +100,36 @@ namespace ZM.ZMAsset
         /// <param name="fileSavePath">文件储存地址</param>
         public DownLoadThread(HotAssetsModule assetsModule, HotFileInfo hotFileInfo, string downLoadUrl,
             string fileSavePath)
+            : this(
+                assetsModule.CurBundleModuleName,
+                hotFileInfo,
+                downLoadUrl,
+                fileSavePath,
+                assetsModule.AddDownloadedBytes)
         {
-            this.mCurHotAssetsModule = assetsModule;
-            this._mCurBundleModuleName = assetsModule.CurBundleModuleName;
-            this.mHotFileInfo = hotFileInfo;
-            this.mFileSavePath = fileSavePath + "/" + hotFileInfo.abName;
-            this.mDownLoadUrl = downLoadUrl + "/" + hotFileInfo.abName;
         }
 
         public DownLoadThread(string bundleModule, HotFileInfo hotFileInfo, string downLoadUrl,
             string fileSavePath)
+            : this(bundleModule, hotFileInfo, downLoadUrl, fileSavePath, null)
+        {
+        }
+
+        /// <summary>
+        /// Native 下载后端使用的构造入口；字节回调替代对 HotAssetsModule 的直接依赖，下载算法保持不变。
+        /// </summary>
+        internal DownLoadThread(
+            string bundleModule,
+            HotFileInfo hotFileInfo,
+            string downLoadUrl,
+            string fileSavePath,
+            Action<int> bytesDownloaded)
         {
             this.mHotFileInfo = hotFileInfo;
             this._mCurBundleModuleName = bundleModule;
             this.mFileSavePath = fileSavePath + "/" + hotFileInfo.abName;
             this.mDownLoadUrl = downLoadUrl + "/" + hotFileInfo.abName;
+            this.mBytesDownloaded = bytesDownloaded;
         }
 
         /// <summary>
@@ -175,7 +190,7 @@ namespace ZM.ZMAsset
                             cancellationToken.ThrowIfCancellationRequested();
                             fileStream.Write(buffer, 0, size);
                             mDownLoadSizeKB += size;
-                            mCurHotAssetsModule.AddDownloadedBytes(size);
+                            mBytesDownloaded?.Invoke(size);
                         }
                     }
 

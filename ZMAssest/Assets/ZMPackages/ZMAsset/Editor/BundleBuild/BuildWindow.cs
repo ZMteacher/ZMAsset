@@ -439,8 +439,8 @@ public partial class BuildWindows : EditorWindow
                         DrawSettingsSection("构建策略", "控制输出平台与 AssetBundle 压缩方式", () =>
                         {
                             settings.buildTarget = (BuildTarget)DrawSettingsPopup("目标平台", (int)settings.buildTarget,
-                                new[] { "自动识别", "iPhone（旧）", "macOS", "macOS Universal", "iOS", "Android", "Linux", "Windows 64 位" },
-                                new[] { -2, -1, 2, 3, 9, 13, 17, 19 });
+                                new[] { "自动识别", "iPhone（旧）", "macOS", "macOS Universal", "iOS", "Android", "Linux", "Windows 64 位", "WebGL" },
+                                new[] { -2, -1, 2, 3, 9, 13, 17, 19, 20 });
                             settings.buildbundleOptions = (BuildAssetBundleOptions)DrawSettingsPopup("压缩格式", (int)settings.buildbundleOptions,
                                 new[] { "LZMA（体积优先）", "不压缩（速度优先）", "LZ4（推荐）" }, new[] { 0, 1, 256 });
                         });

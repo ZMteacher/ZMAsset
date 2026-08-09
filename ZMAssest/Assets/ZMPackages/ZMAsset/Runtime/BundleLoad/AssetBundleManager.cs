@@ -427,6 +427,7 @@ namespace ZM.ZMAsset
         /// <returns></returns>
         public async UniTask<bool> InitializeAssetModule(string bundleModule)
         {
+            await EnsureWebGLActiveSnapshotLoadedAsync();
             await mModuleMutationLock.WaitAsync();
             try
             {
@@ -442,7 +443,7 @@ namespace ZM.ZMAsset
 
         private async UniTask<bool> InitializeAssetModuleInternal(string bundleModule)
         {
-            //00 整个依赖闭包共享访问集合和新增模块列表，递归初始化不会再次获取 mModuleMutationLock。
+            // 整个依赖闭包共享访问集合和新增模块列表，递归初始化不会再次获取 mModuleMutationLock。
             HashSet<string> visitingModules = new HashSet<string>(StringComparer.Ordinal);
 
             List<string> newlyInitializedModules = new List<string>();
@@ -460,7 +461,7 @@ namespace ZM.ZMAsset
         }
 
         /// <summary>
-        /// 00 在已持有模块变更锁的前提下递归初始化依赖闭包；本方法绝不再次等待同一 SemaphoreSlim。
+        /// 在已持有模块变更锁的前提下递归初始化依赖闭包；本方法绝不再次等待同一 SemaphoreSlim。
         /// </summary>
         private async UniTask<bool> InitializeAssetModuleRecursive(string bundleModule, HashSet<string> visitingModules, List<string> newlyInitializedModules)
         {
@@ -468,7 +469,7 @@ namespace ZM.ZMAsset
             AssetBundle bundleConfig = null;
             try
             {
-                //00 模块名称是目录、图节点和 BundleKey 的共同身份，入口统一 Trim 并拒绝空值。
+                // 模块名称是目录、图节点和 BundleKey 的共同身份，入口统一 Trim 并拒绝空值。
                 bundleModule = bundleModule?.Trim();
                 if (string.IsNullOrWhiteSpace(bundleModule))
                     throw new InvalidDataException("初始化 AssetBundle 模块时模块名称不能为空。");
@@ -476,12 +477,12 @@ namespace ZM.ZMAsset
                 {
                     if (mAlreadyLoadBundleModuleList.Contains(bundleModule))
                     {
-                        //0依赖递归和重复业务初始化都采用幂等成功，避免初始化顺序改变结果。
+                        // 依赖递归和重复业务初始化都采用幂等成功，避免初始化顺序改变结果。
                         Debug.Log("该模块配置文件已经加载：" + bundleModule);
                         return true;
                     }
                 }
-                //00 visiting 集合在读取磁盘前检测循环，诊断中输出当前闭包而不是最终栈溢出。
+                // visiting 集合在读取磁盘前检测循环，诊断中输出当前闭包而不是最终栈溢出。
                 if (!visitingModules.Add(bundleModule))
                     throw new InvalidDataException($"模块依赖图存在循环：{string.Join(" -> ", visitingModules)} -> {bundleModule}");
 
@@ -489,9 +490,22 @@ namespace ZM.ZMAsset
                 string assetBundleName = bundleModule.ToString().ToLower() + "assetbundleconfig";
                 string mBundleConfigName = bundleModule.ToString().ToLower() + "bundleconfig"+ BundleSettings.Instance.ABSUFFIX;
                 string mBundleConfigPath = BundleSettings.Instance.GetHotAssetsPath(bundleModule) + mBundleConfigName;
+                AssetRuntimeBackend runtimeBackend = AssetRuntimeBackendFactory.Current;
 
                 //获取当前模块配置文件所在的路径
-                if (!GeneratorBundleConfigPath(bundleModule, mBundleConfigName, ref mBundleConfigPath))
+                AssetBundleLocation webRemoteConfiguration = default;
+                bool hasWebRemoteConfiguration =
+                    runtimeBackend.PlatformKind == AssetRuntimePlatformKind.WebGL &&
+                    (WebGLActiveAssetRegistry.TryResolve(
+                         bundleModule,
+                         mBundleConfigName,
+                         out webRemoteConfiguration) ||
+                     RemoteAssetSystem.Instance.TryResolveRemoteLocation(
+                         bundleModule,
+                         mBundleConfigName,
+                         out webRemoteConfiguration));
+                if (!hasWebRemoteConfiguration &&
+                    !GeneratorBundleConfigPath(bundleModule, mBundleConfigName, ref mBundleConfigPath))
                 {
                     Debug.LogWarning("AssetBundleConfig Not find.  Load AssetBundle failed!"+ bundleModule);
                     return false;
@@ -499,15 +513,32 @@ namespace ZM.ZMAsset
 
 
                 Debug.Log($"LoadBundleManifest :{mBundleConfigPath}");
-                //如果该AssetBundle已经加密，则需要解密
-                if (BundleSettings.Instance.bundleEncrypt.isEncrypt)
-                {
-                    bundleConfig =await AssetBundle.LoadFromMemoryAsync(AES.AESFileByteDecrypt(mBundleConfigPath, BundleSettings.Instance.bundleEncrypt.encryptKey));
-                }
-                else
-                {
-                    bundleConfig =await AssetBundle.LoadFromFileAsync(mBundleConfigPath);
-                }
+                bool isConfigurationEncrypted = BundleSettings.Instance.bundleEncrypt.isEncrypt;
+                string hotConfigurationPath =
+                    BundleSettings.Instance.GetHotAssetsPath(bundleModule) + mBundleConfigName;
+                AssetBundleSourceKind configurationSource = string.Equals(
+                    mBundleConfigPath,
+                    hotConfigurationPath,
+                    StringComparison.OrdinalIgnoreCase)
+                    ? AssetBundleSourceKind.HotUpdate
+                    : AssetBundleSourceKind.Builtin;
+                AssetBundleLocation configurationLocation = hasWebRemoteConfiguration
+                    ? webRemoteConfiguration
+                    : new AssetBundleLocation(
+                        bundleModule,
+                        mBundleConfigName,
+                        configurationSource,
+                        mBundleConfigPath,
+                        null,
+                        0,
+                        isConfigurationEncrypted);
+                AssetBundleLoadRequest configurationRequest = new AssetBundleLoadRequest(
+                    configurationLocation,
+                    AssetBundleLoadPurpose.Configuration,
+                    BundleSettings.Instance.bundleEncrypt.encryptKey);
+
+                // 平台加载器只替代“如何读取 Bundle”；模块依赖闭包和配置提交仍由当前管理器维护。
+                bundleConfig = await runtimeBackend.BundleLoader.LoadAsync(configurationRequest);
 
                 if (bundleConfig == null)
                     throw new InvalidDataException($"无法加载模块配置 AssetBundle：{mBundleConfigPath}");
@@ -518,10 +549,10 @@ namespace ZM.ZMAsset
 
                 string bundleConfigJson = bundleConfigAsset.text;
                 ParsedModuleConfig parsedConfig =
-                    await UniTask.RunOnThreadPool(() =>
+                    await runtimeBackend.Scheduler.RunCpuBoundAsync(() =>
                         ParseModuleConfig(bundleConfigJson, bundleModule));
 
-                //00 先递归初始化全部依赖，再提交消费者；Shared→Business 或环会在协议/访问集合处失败。
+                // 先递归初始化全部依赖，再提交消费者；Shared→Business 或环会在协议/访问集合处失败。
                 foreach (string dependencyModule in parsedConfig.ModuleDependencies)
                 {
                     bool dependencySucceeded = await InitializeAssetModuleRecursive(
@@ -609,6 +640,7 @@ namespace ZM.ZMAsset
         /// </summary>
         public async UniTask<bool> ReloadAssetModule(string bundleModule)
         {
+            await EnsureWebGLActiveSnapshotLoadedAsync();
             await mModuleMutationLock.WaitAsync();
             bool hasModuleGuard = false;
             try
@@ -648,6 +680,14 @@ namespace ZM.ZMAsset
                 }
                 mModuleMutationLock.Release();
             }
+        }
+
+        private static async UniTask EnsureWebGLActiveSnapshotLoadedAsync()
+        {
+            AssetRuntimeBackend backend = AssetRuntimeBackendFactory.Current;
+            if (backend.PlatformKind == AssetRuntimePlatformKind.WebGL &&
+                backend.CommitStrategy is WebGLVersionPointerCommitStrategy pointerStrategy)
+                await pointerStrategy.InitializeAsync();
         }
 
         private async UniTask<bool> ReloadAssetModuleInternal(string bundleModule)
@@ -1072,6 +1112,13 @@ namespace ZM.ZMAsset
         /// <returns></returns>
         public bool GeneratorBundleConfigPath(string bundleModule,string mBundleConfigName,ref string mBundleConfigPath)
         {
+            if (AssetRuntimeBackendFactory.Current.PlatformKind == AssetRuntimePlatformKind.WebGL)
+            {
+                // WebGL 的内嵌、RemoteAsset 与活动热更快照都通过 Location 解析；浏览器 URL 不能交给 File.Exists。
+                mBundleConfigPath = BundleSettings.Instance.GetAssetsBuiltinBundlePath(bundleModule) + mBundleConfigName;
+                return BundleSettings.Instance.loadAssetType == LoadAssetEnum.AssetBundle;
+            }
+
             //如果配置文件 存在，return true，如果不存，我们就直接从内嵌的资源中去加载。
             if (!File.Exists(mBundleConfigPath))
             {
@@ -1179,7 +1226,7 @@ namespace ZM.ZMAsset
 
                     if (item.assetBundle == null)
                     {
-                        Debug.LogError("开始加载远端资源 Bundle：" + item.bundleName);
+                        // 具体加载器已经记录平台、模块、Bundle 与真实失败原因；此层只传播失败，避免重复且错误地归因为远端资源。
                         ownerSource.TrySetResult(null);
                         return null;
                     }
@@ -1242,7 +1289,7 @@ namespace ZM.ZMAsset
             bool isEncrypt = false,
             bool preferHotPath = false)
         {
-            //00 所有缓存和异步去重从入口开始使用完整组合键，不再依赖 Bundle 文件名前缀约定。
+            // 所有缓存和异步去重从入口开始使用完整组合键，不再依赖 Bundle 文件名前缀约定。
             ModuleBundleKey bundleKey = new ModuleBundleKey(bundleModuleType, bundleName);
             if (string.IsNullOrWhiteSpace(bundleKey.ModuleName) || string.IsNullOrWhiteSpace(bundleKey.BundleName))
             {
@@ -1256,7 +1303,7 @@ namespace ZM.ZMAsset
 
             if (bundle==null||(bundle!=null&&bundle.assetBundle==null))
             {
-                //00 锁内原子检查并登记本 Bundle 的异步任务，命中已有任务时转为等待者，避免并发请求重复加载同一 Bundle。
+                // 锁内原子检查并登记本 Bundle 的异步任务，命中已有任务时转为等待者，避免并发请求重复加载同一 Bundle。
                 UniTaskCompletionSource taskCompletionSource;
                 bool isOwner;
                 lock (mLock)
@@ -1286,55 +1333,64 @@ namespace ZM.ZMAsset
                 }
                 //从类对象池中取出一个AssetBundleCache
                 bundle= mBundleCachePool.Spawn();
+                AssetRuntimeBackend runtimeBackend = AssetRuntimeBackendFactory.Current;
                 //计算出AssetBundle加载路径
                 string hotFilePath = BundleSettings.Instance.GetHotAssetsPath(bundleModuleType)+bundleName;
                 // RemoteAsset 已在进入本方法前完成下载和校验，因此应优先读取热更目录。
                 // 普通资源仍只在全局热更模式开启时使用热更目录，避免误读遗留缓存。
-                bool isHotPath = ShouldUseHotPath(
-                    hotFilePath,
-                    preferHotPath,
-                    BundleSettings.Instance.bundleHotType == BundleHotEnum.Hot);
+                bool isHotPath = runtimeBackend.PlatformKind == AssetRuntimePlatformKind.Native &&
+                                 ShouldUseHotPath(
+                                     hotFilePath,
+                                     preferHotPath,
+                                     BundleSettings.Instance.bundleHotType == BundleHotEnum.Hot);
                 // 根据已经验证过的来源选择最终 AssetBundle 文件路径。
                 string bundlePath = isHotPath ? hotFilePath :  BundleSettings.Instance.GetAssetsBuiltinBundlePath(bundleModuleType) + bundleName;
-                //判断AssetBUndle是否加密，如果加密了，则需要解密
-                if (shouldDecrypt)
+                AssetBundleLocation webRemoteLocation = default;
+                bool hasWebRemoteLocation =
+                    runtimeBackend.PlatformKind == AssetRuntimePlatformKind.WebGL &&
+                    preferHotPath &&
+                    (WebGLActiveAssetRegistry.TryResolve(
+                         bundleModuleType,
+                         bundleName,
+                         out webRemoteLocation) ||
+                     RemoteAssetSystem.Instance.TryResolveRemoteLocation(
+                         bundleModuleType,
+                         bundleName,
+                         out webRemoteLocation));
+                AssetBundleLocation bundleLocation = hasWebRemoteLocation
+                    ? webRemoteLocation
+                    : new AssetBundleLocation(
+                        bundleModuleType,
+                        bundleName,
+                        isHotPath ? AssetBundleSourceKind.HotUpdate : AssetBundleSourceKind.Builtin,
+                        bundlePath,
+                        null,
+                        0,
+                        shouldDecrypt);
+                AssetBundleLoadRequest loadRequest = new AssetBundleLoadRequest(
+                    bundleLocation,
+                    AssetBundleLoadPurpose.Content,
+                    BundleSettings.Instance.bundleEncrypt.encryptKey);
+                try
                 {
-                    try
-                    {
-                        byte[] bytes=  await AES.AESFileByteDecryptAwait(bundlePath, BundleSettings.Instance.bundleEncrypt.encryptKey,isHotPath);
-                        bundle.assetBundle= AssetBundle.LoadFromMemory(bytes);
-                    }
-                    catch (Exception e)
-                    {
-                        //00 加密分支失败必须显式归还池对象并终止流程，不能依赖后续 null 分支的隐式兜底，避免后续改动引入泄漏。
-                        mBundleCachePool.Recycl(bundle);
-                        lock (mLock)
-                        {
-                            mAsyncLoadBundleActionDic[bundleKey].TrySetCanceled();
-                            mAsyncLoadBundleActionDic.Remove(bundleKey);
-                        }
-                        Debug.LogError(e);
-                        return null;
-                    }
-                  
+                    bundle.assetBundle = await runtimeBackend.BundleLoader.LoadAsync(loadRequest);
                 }
-                else
+                catch (Exception e)
                 {
-                    try
+                    // 加载失败必须显式归还池对象并终止流程，不能依赖后续 null 分支隐式兜底。
+                    mBundleCachePool.Recycl(bundle);
+                    lock (mLock)
                     {
-                        //通过LoadFromFile 加载AssetBundle 是最快的
-                        bundle.assetBundle = await AssetBundle.LoadFromFileAsync(bundlePath);
-                    }
-                    catch (Exception e)
-                    {
-                        lock (mLock)
+                        if (mAsyncLoadBundleActionDic.TryGetValue(bundleKey, out UniTaskCompletionSource failedSource))
                         {
-                            mAsyncLoadBundleActionDic[bundleKey].TrySetCanceled();
+                            failedSource.TrySetCanceled();
                             mAsyncLoadBundleActionDic.Remove(bundleKey);
                         }
-                        Debug.LogError(e);
                     }
-                    
+                    Debug.LogError(
+                        $"AssetBundle 异步加载异常，平台：{AssetRuntimeBackendFactory.Current.PlatformKind}，" +
+                        $"模块：{bundleModuleType}，Bundle：{bundleName}，来源：{bundleLocation.SourceKind}，异常：{e}");
+                    return null;
                 }
                 if (bundle.assetBundle==null)
                 {
@@ -1398,7 +1454,7 @@ namespace ZM.ZMAsset
 
                 if (item.assetBundle == null)
                 {
-                    Debug.LogError("开始加载远端资源 Bundle：" + item.bundleName);
+                    // 具体失败原因已经由按模块加载的底层入口记录；这里不再追加“远端资源”等错误归因。
                     return null;
                 }
                 acquiredBundleKeys.Add(new ModuleBundleKey(item.bundleModuleType, item.bundleName));
@@ -1434,7 +1490,7 @@ namespace ZM.ZMAsset
         /// <returns></returns>
         public AssetBundle LoadAssetBundle(string bundleName, string bundleModuleType)
         {
-            //00 同步加载与异步加载使用相同的模块 Bundle 身份。
+            // 同步加载与异步加载使用相同的模块 Bundle 身份。
             ModuleBundleKey bundleKey = new ModuleBundleKey(bundleModuleType, bundleName);
             if (string.IsNullOrWhiteSpace(bundleKey.ModuleName) || string.IsNullOrWhiteSpace(bundleKey.BundleName))
             {
@@ -1448,27 +1504,42 @@ namespace ZM.ZMAsset
             {
                 //从类对象池中取出一个AssetBundleCache
                 bundle= mBundleCachePool.Spawn();
+                AssetRuntimeBackend runtimeBackend = AssetRuntimeBackendFactory.Current;
                 //计算出AssetBundle加载路径
                 string hotFilePath = BundleSettings.Instance.GetHotAssetsPath(bundleModuleType)+bundleName;
                 // 同步入口不承担远端下载；仅在全局热更模式开启且文件存在时读取热更目录。
-                bool isHotPath = ShouldUseHotPath(
-                    hotFilePath,
-                    false,
-                    BundleSettings.Instance.bundleHotType == BundleHotEnum.Hot);
+                bool isHotPath = runtimeBackend.PlatformKind == AssetRuntimePlatformKind.Native &&
+                                 ShouldUseHotPath(
+                                     hotFilePath,
+                                     false,
+                                     BundleSettings.Instance.bundleHotType == BundleHotEnum.Hot);
                 //通过是否是热更路径 计算出AssetBundle加载的路径
                 string bundlePath = isHotPath ? hotFilePath :  BundleSettings.Instance.GetAssetsBuiltinBundlePath(bundleModuleType) + bundleName;
                 Debug.Log("LoadAssetBundle Path:"+bundlePath);
-                //判断AssetBUndle是否加密，如果加密了，则需要解密
-                if (BundleSettings.Instance.bundleEncrypt.isEncrypt)
+                AssetBundleLocation bundleLocation = new AssetBundleLocation(
+                    bundleModuleType,
+                    bundleName,
+                    isHotPath ? AssetBundleSourceKind.HotUpdate : AssetBundleSourceKind.Builtin,
+                    bundlePath,
+                    null,
+                    0,
+                    BundleSettings.Instance.bundleEncrypt.isEncrypt);
+                AssetBundleLoadRequest loadRequest = new AssetBundleLoadRequest(
+                    bundleLocation,
+                    AssetBundleLoadPurpose.Content,
+                    BundleSettings.Instance.bundleEncrypt.encryptKey);
+                try
                 {
-                    byte[] bytes= AES.AESFileByteDecrypt(bundlePath, BundleSettings.Instance.bundleEncrypt.encryptKey);
-                    bundle.assetBundle= AssetBundle.LoadFromMemory(bytes);
+                    bundle.assetBundle = runtimeBackend.BundleLoader.Load(loadRequest);
                 }
-                else
+                catch (Exception exception)
                 {
-                    //通过LoadFromFile 加载AssetBundle 是最快的
-                    bundle.assetBundle = AssetBundle.LoadFromFile(bundlePath);
-         
+                    // WebGL 未驻留 Bundle 会在这里快速失败；不能忙等浏览器网络请求，也不能泄漏已经取出的池对象。
+                    mBundleCachePool.Recycl(bundle);
+                    Debug.LogError(
+                        $"AssetBundle 同步加载失败，平台：{runtimeBackend.PlatformKind}，模块：{bundleModuleType}，" +
+                        $"Bundle：{bundleName}。完整异常：{exception}");
+                    return null;
                 }
                 if (bundle.assetBundle==null)
                 {

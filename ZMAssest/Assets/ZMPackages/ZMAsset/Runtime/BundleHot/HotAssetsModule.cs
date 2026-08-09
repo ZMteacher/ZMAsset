@@ -96,28 +96,20 @@ namespace ZM.ZMAsset
         /// <summary>
         /// 资源下载器
         /// </summary>
-        private AssetsDownLoader mAssetsDownLoader;
+        private IAssetDownloadBatch mAssetsDownLoader;
+
+        /// <summary>
+        /// 同一模块实例固定使用同一个平台后端，避免一次事务中途混用不同的下载、元数据或提交实现。
+        /// </summary>
+        private readonly IAssetDownloadService mDownloadService;
+        private readonly IAssetMetadataStore mMetadataStore;
+        private readonly IHotUpdateCommitStrategy mCommitStrategy;
+        private readonly AssetRuntimePlatformKind mPlatformKind;
+        private bool UsesWebGLVersionPointer => mPlatformKind == AssetRuntimePlatformKind.WebGL;
         /// <summary>
         /// 当前热更新事务的临时快照、回滚快照和 Manifest 临时文件。
         /// </summary>
-        private string mTransactionStagingPath;
-        private string mTransactionBackupPath;
-        private string mTransactionManifestStagingPath;
-        private string mTransactionManifestBackupPath;
-        private string mTransactionJournalPath;
-        private string mTransactionId;
-        private bool mHadFinalSnapshot;
-        private bool mHadLocalManifest;
-        /// <summary>
-        /// 中断恢复日志只保存事务标识和旧状态，所有真实路径均由可信根目录重新推导。
-        /// </summary>
-        [Serializable]
-        private sealed class HotUpdateTransactionJournal
-        {
-            public string transactionId;
-            public bool hadFinalSnapshot;
-            public bool hadLocalManifest;
-        }
+        private HotUpdateCommitContext mTransactionContext;
         /// <summary>
         /// AssetBundle配置文件下载完成监听
         /// </summary>
@@ -160,6 +152,11 @@ namespace ZM.ZMAsset
         private int mCoordinatedOperationId;
         public HotAssetsModule(string bundleModule,MonoBehaviour mono)
         {
+            AssetRuntimeBackend backend = AssetRuntimeBackendFactory.Current;
+            mDownloadService = backend.DownloadService;
+            mMetadataStore = backend.MetadataStore;
+            mCommitStrategy = backend.CommitStrategy;
+            mPlatformKind = backend.PlatformKind;
             mMono = mono;
             CurBundleModuleName = bundleModule;
             mAppVersion = Application.version;
@@ -281,34 +278,38 @@ namespace ZM.ZMAsset
                 downLoadQueue.Enqueue(item);
             }
 
+            PrepareAndStartDownloadAsync(downLoadQueue, startDonwLoadCallBack).Forget();
+
+        }
+
+        private async UniTask PrepareAndStartDownloadAsync(
+            Queue<HotFileInfo> downLoadQueue,
+            Action startDownloadCallback)
+        {
             try
             {
-                // 先创建 staging、写模块日志并复制无需下载的旧文件，下载器只能写入 staging。
-                PrepareHotUpdateTransaction();
+                // Native creates a staging directory; WebGL creates a metadata-only candidate context.
+                await PrepareHotUpdateTransactionAsync();
+                mAssetsDownLoader = mDownloadService.CreateBatch(new AssetDownloadBatchRequest
+                {
+                    OperationId = mTransactionContext.TransactionId,
+                    ModuleName = CurBundleModuleName,
+                    DownloadQueue = downLoadQueue,
+                    DownloadUrl = mServerHotAssetsManifest.downLoadURL,
+                    SavePath = mTransactionContext.StagingSnapshotPath,
+                    BytesDownloaded = AddDownloadedBytes,
+                    DownloadSucceeded = DownLoadAssetBundleSuccess,
+                    DownloadFailed = DownLoadAssetBundleFailed,
+                    BatchFinished = HandleDownloadBatchFinished
+                });
+                startDownloadCallback?.Invoke();
+                mAssetsDownLoader.Start();
             }
             catch (Exception exception)
             {
-                Debug.LogError($"模块 {CurBundleModuleName} 创建热更新临时快照失败：{exception}");
-                DownLoadAssetBundleFailed(
-                    mNeedDownLoadAssetsList.Count > 0 ? mNeedDownLoadAssetsList[0] : null);
-                return;
+                Debug.LogError($"模块 {CurBundleModuleName} 创建热更新候选快照失败：{exception}");
+                DownLoadAssetBundleFailed(mNeedDownLoadAssetsList.Count > 0 ? mNeedDownLoadAssetsList[0] : null);
             }
-
-            // 所有下载只写入临时快照，正式资源目录在完整校验前保持不变。
-            mAssetsDownLoader = new AssetsDownLoader(
-                this,
-                downLoadQueue,
-                mServerHotAssetsManifest.downLoadURL,
-                mTransactionStagingPath,
-                DownLoadAssetBundleSuccess,
-                DownLoadAssetBundleFailed,
-                HandleDownloadBatchFinished);
-
-            startDonwLoadCallBack?.Invoke();
-            //开始下载队列中的资源
-            // 下载器启动后，后台只负责网络和文件，完成回调会由 OnMainThreadUpdate 切回 Unity 主线程。
-            mAssetsDownLoader.StartThreadDownLoadQueue();
-
         }
         /// <summary>
         /// 检测资源版本；下载服务端清单、比对版本并计算需要热更的文件列表。
@@ -325,7 +326,7 @@ namespace ZM.ZMAsset
             try
             {
                 // 版本比较前先恢复上次中断事务，避免用半切换的 Manifest 计算补丁差异。
-                RecoverInterruptedTransactionIfNeeded();
+                await RecoverInterruptedTransactionIfNeededAsync();
             }
             catch (Exception exception)
             {
@@ -427,6 +428,20 @@ namespace ZM.ZMAsset
         /// <returns></returns>
         public bool ComputeNeedHotAssetsList(HotAssetsPatch serverAssetsPath)
         {
+            if (UsesWebGLVersionPointer)
+            {
+                AssetsMaxSizeM = 0;
+                foreach (HotFileInfo item in serverAssetsPath.hotAssetsList)
+                {
+                    mAllHotAssetsList.Add(item);
+                    // Unity Cache has no reliable non-request existence query. Preparing the complete
+                    // candidate snapshot lets cached objects short-circuit in the browser and repairs eviction.
+                    mNeedDownLoadAssetsList.Add(item);
+                    AssetsMaxSizeM += item.size / 1024f;
+                }
+                return mNeedDownLoadAssetsList.Count > 0;
+            }
+
             if (!Directory.Exists(HotAssetsSavePath))
             {
                 Directory.CreateDirectory(HotAssetsSavePath);
@@ -482,6 +497,19 @@ namespace ZM.ZMAsset
             if (mServerHotAssetsManifest.hotAssetsPatchList.Count == 0)
             {
                 return false;
+            }
+
+            if (UsesWebGLVersionPointer)
+            {
+                if (!WebGLActiveAssetRegistry.TryGetManifest(CurBundleModuleName, out HotAssetsManifest activeManifest) ||
+                    activeManifest?.hotAssetsPatchList == null ||
+                    activeManifest.hotAssetsPatchList.Count == 0)
+                    return true;
+                HotAssetsPatch activePatch = activeManifest.hotAssetsPatchList[activeManifest.hotAssetsPatchList.Count - 1];
+                HotAssetsPatch candidatePatch = mServerHotAssetsManifest.hotAssetsPatchList[mServerHotAssetsManifest.hotAssetsPatchList.Count - 1];
+                return activePatch == null || candidatePatch == null ||
+                       activePatch.patchVersion != candidatePatch.patchVersion ||
+                       !string.Equals(activeManifest.manifestId, mServerHotAssetsManifest.manifestId, StringComparison.Ordinal);
             }
 
             //如果本地资源清单文件不存在，说明我们需要热更
@@ -606,12 +634,26 @@ namespace ZM.ZMAsset
             string manifestStagingPath = mServerHotAssetsManifestPath + ".writing";
             try
             {
-                await File.WriteAllTextAsync(manifestStagingPath, downLoadContent);
-                RemoteAssetModule.PromoteVerifiedFile(manifestStagingPath, mServerHotAssetsManifestPath);
+                if (UsesWebGLVersionPointer)
+                {
+                    await mMetadataStore.WriteTextAtomicallyAsync(mServerHotAssetsManifestPath, downLoadContent);
+                }
+                else
+                {
+                    await mMetadataStore.WriteTextAsync(manifestStagingPath, downLoadContent);
+                    string operationId = $"{CurBundleModuleName}_manifest_{Guid.NewGuid():N}";
+                    mCommitStrategy.PromoteVerifiedFile(
+                        manifestStagingPath,
+                        mServerHotAssetsManifestPath,
+                        operationId,
+                        CurBundleModuleName,
+                        "ServerManifest");
+                }
             }
             catch (Exception exception)
             {
-                TryDeleteManifestStagingFile(manifestStagingPath);
+                if (!UsesWebGLVersionPointer)
+                    TryDeleteManifestStagingFile(manifestStagingPath);
                 Debug.LogWarning(
                     $"模块 {CurBundleModuleName} 远端热更清单已校验成功，但本地缓存写入失败：{exception.Message}");
             }
@@ -715,6 +757,20 @@ namespace ZM.ZMAsset
                     CurBundleModuleName,
                     "InvalidManifest",
                     $"模块 {CurBundleModuleName} 的热更清单缺少应用版本。");
+            }
+
+            if (UsesWebGLVersionPointer)
+            {
+                if (!string.Equals(manifest.targetPlatform, "WebGL", StringComparison.Ordinal))
+                    throw new HotUpdateVersionCheckException(
+                        CurBundleModuleName,
+                        "InvalidManifest",
+                        $"模块 {CurBundleModuleName} 的 WebGL 热更清单目标平台无效：{manifest.targetPlatform ?? "<empty>"}。");
+                if (string.IsNullOrWhiteSpace(manifest.manifestId))
+                    throw new HotUpdateVersionCheckException(
+                        CurBundleModuleName,
+                        "InvalidManifest",
+                        $"模块 {CurBundleModuleName} 的 WebGL 热更清单缺少 manifestId。");
             }
 
             if (manifest.hotAssetsPatchList == null)
@@ -864,6 +920,30 @@ namespace ZM.ZMAsset
                     "InvalidManifest",
                     $"模块 {CurBundleModuleName} 的热更文件大小非法：{hotFile.abName}。");
             }
+
+
+            if (UsesWebGLVersionPointer)
+            {
+                if (string.IsNullOrWhiteSpace(hotFile.bundleHash))
+                    throw new HotUpdateVersionCheckException(
+                        CurBundleModuleName,
+                        "InvalidManifest",
+                        $"模块 {CurBundleModuleName} 的 WebGL Bundle 缺少 Hash：{hotFile.abName}。");
+                try
+                {
+                    Hash128 hash = Hash128.Parse(hotFile.bundleHash);
+                    if (!hash.isValid)
+                        throw new FormatException("Hash128 is invalid.");
+                }
+                catch (Exception exception)
+                {
+                    throw new HotUpdateVersionCheckException(
+                        CurBundleModuleName,
+                        "InvalidManifest",
+                        $"模块 {CurBundleModuleName} 的 WebGL Bundle Hash 无效：{hotFile.abName}。",
+                        exception);
+                }
+            }
         }
 
         /// <summary>
@@ -915,7 +995,7 @@ namespace ZM.ZMAsset
                 return;
             }
 
-            RollbackHotUpdateTransaction();
+            await RollbackHotUpdateTransactionAsync();
             mAssetsDownLoader?.Dispose();
             mAssetsDownLoader = null;
             // 失败时绝不能触发成功回调，否则业务层会把不完整版本当作可用版本。
@@ -937,7 +1017,7 @@ namespace ZM.ZMAsset
                 // 最终磁盘切换前再次检查依赖图；下载期间新初始化的业务模块也能阻止 Shared 在线升级。
                 EnsureModuleConfigurationMutationAllowed();
                 ValidateStagedSnapshot();
-                PromoteStagedSnapshot();
+                await PromoteStagedSnapshotAsync(true);
 
                 // 只有正式快照切换成功后才能初始化配置；已初始化模块也必须安全重载，禁止磁盘与内存版本分叉。
                 bool moduleAlreadyInitialized = AssetBundleManager.Instance.IsAssetModuleInitialized(CurBundleModuleName);
@@ -947,7 +1027,7 @@ namespace ZM.ZMAsset
                 if (!initializeSucceeded && (moduleAlreadyInitialized || !AssetBundleManager.Instance.IsAssetModuleInitialized(CurBundleModuleName)))
                     throw new InvalidOperationException($"模块 {CurBundleModuleName} 配置初始化或安全重载失败。");
                 //正式快照和配置初始化成功后删除回滚数据。
-                FinalizeHotUpdateTransaction();
+                await FinalizeHotUpdateTransactionAsync();
                 
                 DispatchCommittedFileCallbacks();
                 
@@ -987,13 +1067,15 @@ namespace ZM.ZMAsset
         /// <summary>
         /// 由组协调器按调用方顺序切换已校验快照；没有变化的模块是空操作。
         /// </summary>
-        internal void PromoteCoordinatedTransaction()
+        internal async UniTask PrepareCoordinatedCommitAsync()
         {
             if (!mIsCoordinatedTransaction)
                 throw new InvalidOperationException($"模块 {CurBundleModuleName} 未处于多模块事务模式。");
             if (mCoordinatedHasChanges)
-                PromoteStagedSnapshot();
+                await PromoteStagedSnapshotAsync(false);
         }
+
+        internal HotUpdateCommitContext TransactionContext => mTransactionContext;
 
         /// <summary>
         /// 在全部模块磁盘切换完成后，按显式顺序初始化或安全重载配置。
@@ -1011,11 +1093,14 @@ namespace ZM.ZMAsset
         /// <summary>
         /// 组内全部初始化成功后才删除备份；随后统一发送文件级提交事件。
         /// </summary>
-        internal void FinalizeCoordinatedTransaction()
+        internal async UniTask FinalizeCoordinatedTransactionAsync(bool groupPointerAlreadyFinalized)
         {
             if (mCoordinatedHasChanges)
             {
-                FinalizeHotUpdateTransaction();
+                if (!groupPointerAlreadyFinalized)
+                    await FinalizeHotUpdateTransactionAsync();
+                else
+                    ResetTransactionState();
                 DispatchCommittedFileCallbacks();
             }
             ResetCoordinatedState();
@@ -1029,8 +1114,8 @@ namespace ZM.ZMAsset
             if (mAssetsDownLoader != null)
                 await mAssetsDownLoader.CancelAndWaitAsync();
 
-            if ((mCoordinatedHasChanges || !string.IsNullOrEmpty(mTransactionStagingPath)) &&
-                !RollbackHotUpdateTransaction())
+            if ((mCoordinatedHasChanges || mTransactionContext != null) &&
+                !await RollbackHotUpdateTransactionAsync())
                 throw new IOException($"模块 {CurBundleModuleName} 的热更新磁盘快照回滚失败。");
 
             bool isInitializedNow = AssetBundleManager.Instance.IsAssetModuleInitialized(CurBundleModuleName);
@@ -1059,33 +1144,13 @@ namespace ZM.ZMAsset
         internal void RollbackInterruptedGroupTransaction()
         {
             GeneratorHotAssetsManifest();
-            ValidateModuleName(CurBundleModuleName);
-            string finalSnapshotPath = NormalizeDirectoryPath(HotAssetsSavePath);
-            string snapshotParentPath = Directory.GetParent(finalSnapshotPath)?.FullName;
-            if (string.IsNullOrEmpty(snapshotParentPath))
-                throw new InvalidOperationException($"无法解析热更新目录父路径：{finalSnapshotPath}");
-
-            mTransactionJournalPath = Path.Combine(snapshotParentPath, $".{CurBundleModuleName}.hotupdate.transaction");
-            string journalWritingPath = mTransactionJournalPath + ".writing";
-            if (!File.Exists(mTransactionJournalPath) && File.Exists(journalWritingPath))
-                File.Move(journalWritingPath, mTransactionJournalPath);
-            if (!File.Exists(mTransactionJournalPath))
-                return;
-
-            HotUpdateTransactionJournal journal =
-                JsonConvert.DeserializeObject<HotUpdateTransactionJournal>(File.ReadAllText(mTransactionJournalPath));
-            if (journal == null || !IsValidTransactionId(journal.transactionId))
-                throw new InvalidDataException($"模块 {CurBundleModuleName} 的组事务恢复日志非法。");
-
-            mTransactionId = journal.transactionId;
-            mTransactionStagingPath = Path.Combine(snapshotParentPath, $".{mTransactionId}.staging");
-            mTransactionBackupPath = Path.Combine(snapshotParentPath, $".{mTransactionId}.backup");
-            mTransactionManifestStagingPath = $"{mLocalHotAssetManifestPath}.{mTransactionId}.staging";
-            mTransactionManifestBackupPath = $"{mLocalHotAssetManifestPath}.{mTransactionId}.backup";
-            mHadFinalSnapshot = journal.hadFinalSnapshot;
-            mHadLocalManifest = journal.hadLocalManifest;
-            if (!RollbackHotUpdateTransaction())
-                throw new IOException($"模块 {CurBundleModuleName} 的中断组事务回滚失败。");
+            // 组事务恢复始终回滚整组，不采用单模块允许的“目录已完整切换则向前完成”策略。
+            mCommitStrategy.RecoverInterruptedTransaction(
+                CurBundleModuleName,
+                HotAssetsSavePath,
+                mLocalHotAssetManifestPath,
+                true);
+            ResetTransactionState();
         }
 
         private void ResetCoordinatedState()
@@ -1136,43 +1201,27 @@ namespace ZM.ZMAsset
         /// <summary>
         /// 创建与正式目录同级的临时快照，并复制本版本中无需重新下载的有效文件。
         /// </summary>
-        private void PrepareHotUpdateTransaction()
+        private async UniTask PrepareHotUpdateTransactionAsync()
         {
             // 在创建 staging 和下载文件前先做一次快速门禁，避免明知 Shared 有消费者仍浪费带宽和磁盘。
             EnsureModuleConfigurationMutationAllowed();
-            RecoverInterruptedTransactionIfNeeded();
-            
-            string finalSnapshotPath = NormalizeDirectoryPath(HotAssetsSavePath);
-            
-            string snapshotParentPath = Directory.GetParent(finalSnapshotPath)?.FullName;
-            
-            if (string.IsNullOrEmpty(snapshotParentPath))
-                throw new InvalidOperationException($"无法解析热更新目录父路径：{finalSnapshotPath}");
-            mTransactionJournalPath = Path.Combine(snapshotParentPath, $".{CurBundleModuleName}.hotupdate.transaction");
-
-            mTransactionId = $"{CurBundleModuleName}_{Guid.NewGuid():N}";
-            
-            mTransactionStagingPath = Path.Combine(snapshotParentPath, $".{mTransactionId}.staging");
-            
-            mTransactionBackupPath = Path.Combine(snapshotParentPath, $".{mTransactionId}.backup");
-            
-            mTransactionManifestStagingPath = $"{mLocalHotAssetManifestPath}.{mTransactionId}.staging";
-            
-            mTransactionManifestBackupPath = $"{mLocalHotAssetManifestPath}.{mTransactionId}.backup";
-            
-            mHadFinalSnapshot = Directory.Exists(finalSnapshotPath);
-            
-            mHadLocalManifest = File.Exists(mLocalHotAssetManifestPath);
-
-            Directory.CreateDirectory(mTransactionStagingPath);
-            // 创建临时目录后立即登记事务，复制旧文件或下载期间退出也能在下次启动清理。
-            WriteTransactionJournal();
+            await RecoverInterruptedTransactionIfNeededAsync();
+            if (UsesWebGLVersionPointer)
+            {
+                WebGLVersionPointerCommitStrategy strategy = GetWebGLCommitStrategy();
+                mTransactionContext = await strategy.CreateTransactionAsync(CurBundleModuleName);
+                return;
+            }
+            mTransactionContext = mCommitStrategy.CreateTransaction(
+                CurBundleModuleName,
+                HotAssetsSavePath,
+                mLocalHotAssetManifestPath);
             HashSet<string> downloadFileNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             
             foreach (HotFileInfo hotFile in mNeedDownLoadAssetsList)
             {
                 // 服务端文件名必须在启动下载前完成路径边界校验，禁止先写出临时目录再事后发现越界。
-                GetSafeSnapshotFilePath(mTransactionStagingPath, hotFile.abName);
+                GetSafeSnapshotFilePath(mTransactionContext.StagingSnapshotPath, hotFile.abName);
                 downloadFileNames.Add(hotFile.abName);
             }
 
@@ -1181,9 +1230,9 @@ namespace ZM.ZMAsset
                 if (downloadFileNames.Contains(hotFile.abName))
                     continue;
 
-                string targetPath = GetSafeSnapshotFilePath(mTransactionStagingPath, hotFile.abName);
+                string targetPath = GetSafeSnapshotFilePath(mTransactionContext.StagingSnapshotPath, hotFile.abName);
                 
-                string finalSourcePath = GetSafeSnapshotFilePath(finalSnapshotPath, hotFile.abName);
+                string finalSourcePath = GetSafeSnapshotFilePath(mTransactionContext.FinalSnapshotPath, hotFile.abName);
                 
                 string decompressSourcePath = GetSafeSnapshotFilePath(BundleSettings.Instance.GetAssetsDecompressPath(CurBundleModuleName), hotFile.abName);
                 
@@ -1211,26 +1260,29 @@ namespace ZM.ZMAsset
         /// <summary>
         /// 从可信模块路径定位事务日志，并在创建新事务前完成中断恢复。
         /// </summary>
-        private void RecoverInterruptedTransactionIfNeeded()
+        private async UniTask RecoverInterruptedTransactionIfNeededAsync()
         {
-            ValidateModuleName(CurBundleModuleName);
+            if (UsesWebGLVersionPointer)
+            {
+                await GetWebGLCommitStrategy().InitializeAsync();
+                ResetTransactionState();
+                return;
+            }
             if (string.IsNullOrEmpty(mLocalHotAssetManifestPath))
                 GeneratorHotAssetsManifest();
+            mCommitStrategy.RecoverInterruptedTransaction(
+                CurBundleModuleName,
+                HotAssetsSavePath,
+                mLocalHotAssetManifestPath,
+                false);
+            ResetTransactionState();
+        }
 
-            string finalSnapshotPath = NormalizeDirectoryPath(HotAssetsSavePath);
-            
-            string snapshotParentPath = Directory.GetParent(finalSnapshotPath)?.FullName;
-            
-            if (string.IsNullOrEmpty(snapshotParentPath)) 
-                throw new InvalidOperationException($"无法解析热更新目录父路径：{finalSnapshotPath}");
-            
-            Directory.CreateDirectory(snapshotParentPath);
-            
-            mTransactionJournalPath = Path.Combine(snapshotParentPath, $".{CurBundleModuleName}.hotupdate.transaction");
-            
-            RecoverInterruptedTransaction(snapshotParentPath, finalSnapshotPath);
-            
-            mTransactionJournalPath = Path.Combine(snapshotParentPath, $".{CurBundleModuleName}.hotupdate.transaction");
+        private WebGLVersionPointerCommitStrategy GetWebGLCommitStrategy()
+        {
+            if (mCommitStrategy is WebGLVersionPointerCommitStrategy strategy)
+                return strategy;
+            throw new InvalidOperationException("WebGL 热更新模块未绑定版本指针提交策略。");
         }
 
         /// <summary>
@@ -1238,12 +1290,15 @@ namespace ZM.ZMAsset
         /// </summary>
         private void ValidateStagedSnapshot()
         {
-            if (!Directory.Exists(mTransactionStagingPath))
-                throw new DirectoryNotFoundException($"热更新临时目录不存在：{mTransactionStagingPath}");
+            if (UsesWebGLVersionPointer)
+                return;
+            if (mTransactionContext == null || !Directory.Exists(mTransactionContext.StagingSnapshotPath))
+                throw new DirectoryNotFoundException(
+                    $"热更新临时目录不存在：{mTransactionContext?.StagingSnapshotPath ?? "未创建事务"}");
             
             foreach (HotFileInfo hotFile in mAllHotAssetsList)
             {
-                string stagedFilePath = GetSafeSnapshotFilePath(mTransactionStagingPath, hotFile.abName);
+                string stagedFilePath = GetSafeSnapshotFilePath(mTransactionContext.StagingSnapshotPath, hotFile.abName);
                 
                 if (!File.Exists(stagedFilePath))
                     throw new FileNotFoundException("临时快照缺少文件", stagedFilePath);
@@ -1258,189 +1313,68 @@ namespace ZM.ZMAsset
         /// <summary>
         /// 使用同磁盘目录重命名切换资源快照和 Manifest，任一步失败均可回滚。
         /// </summary>
-        private void PromoteStagedSnapshot()
+        private async UniTask PromoteStagedSnapshotAsync(bool commitWebGLPointer)
         {
-            string finalSnapshotPath = NormalizeDirectoryPath(HotAssetsSavePath);
-            
             string manifestJson = JsonConvert.SerializeObject(mServerHotAssetsManifest, Formatting.Indented);
-            
-            File.WriteAllText(mTransactionManifestStagingPath, manifestJson);
-
-            if (mHadFinalSnapshot)
-                Directory.Move(finalSnapshotPath, mTransactionBackupPath);
-            Directory.Move(mTransactionStagingPath, finalSnapshotPath);
-
-            if (mHadLocalManifest)
-                File.Move(mLocalHotAssetManifestPath, mTransactionManifestBackupPath);
-            File.Move(mTransactionManifestStagingPath, mLocalHotAssetManifestPath);
+            if (UsesWebGLVersionPointer)
+            {
+                WebGLVersionPointerCommitStrategy strategy = GetWebGLCommitStrategy();
+                await strategy.PrepareCandidateAsync(mTransactionContext, manifestJson);
+                if (commitWebGLPointer)
+                {
+                    await strategy.CommitGroupAsync(
+                        new[] { mTransactionContext },
+                        mTransactionContext.TransactionId,
+                        new[] { CurBundleModuleName });
+                }
+                return;
+            }
+            mCommitStrategy.PromoteSnapshot(mTransactionContext, manifestJson);
         }
 
         /// <summary>
         /// 正式快照和配置初始化成功后删除回滚数据。
         /// </summary>
-        private void FinalizeHotUpdateTransaction()
+        private async UniTask FinalizeHotUpdateTransactionAsync()
         {
-            // 先删除事务日志声明提交完成；日志删除失败时保留全部备份，重启后仍可安全判定完整切换。
-            if (TryDeleteFile(mTransactionJournalPath, "热更新事务日志"))
-            {
-                TryDeleteDirectory(mTransactionBackupPath, "热更新备份目录");
-                TryDeleteFile(mTransactionManifestBackupPath, "热更新 Manifest 备份");
-            }
+            if (UsesWebGLVersionPointer)
+                await GetWebGLCommitStrategy().FinalizeGroupAsync(mTransactionContext.TransactionId);
+            else
+                mCommitStrategy.FinalizeTransaction(mTransactionContext);
             ResetTransactionState();
         }
 
         /// <summary>
         /// 恢复事务开始前的资源目录和本地 Manifest。
         /// </summary>
-        private bool RollbackHotUpdateTransaction()
+        private async UniTask<bool> RollbackHotUpdateTransactionAsync()
         {
-            if (string.IsNullOrEmpty(mTransactionStagingPath))
+            if (mTransactionContext == null)
                 return true;
-
-            string finalSnapshotPath = NormalizeDirectoryPath(HotAssetsSavePath);
-            bool rollbackSucceeded = false;
-            try
+            if (UsesWebGLVersionPointer)
             {
-                if (Directory.Exists(mTransactionBackupPath))
+                try
                 {
-                    DeleteDirectoryIfExists(finalSnapshotPath);
-                    Directory.Move(mTransactionBackupPath, finalSnapshotPath);
+                    await GetWebGLCommitStrategy().RollbackGroupAsync(
+                        new[] { mTransactionContext },
+                        mTransactionContext.TransactionId);
+                    ResetTransactionState();
+                    return true;
                 }
-                else if (!mHadFinalSnapshot && Directory.Exists(finalSnapshotPath) && !Directory.Exists(mTransactionStagingPath))
+                catch (Exception exception)
                 {
-                    DeleteDirectoryIfExists(finalSnapshotPath);
+                    Debug.LogError(
+                        $"模块 {CurBundleModuleName} WebGL 热更新指针回滚失败，事务：{mTransactionContext.TransactionId}，异常：{exception}");
+                    ResetTransactionState();
+                    return false;
                 }
-
-                if (File.Exists(mTransactionManifestBackupPath))
-                {
-                    DeleteFileIfExists(mLocalHotAssetManifestPath);
-                    File.Move(mTransactionManifestBackupPath, mLocalHotAssetManifestPath);
-                }
-                else if (!mHadLocalManifest && File.Exists(mLocalHotAssetManifestPath) && !File.Exists(mTransactionManifestStagingPath))
-                {
-                    DeleteFileIfExists(mLocalHotAssetManifestPath);
-                }
-                rollbackSucceeded = true;
             }
-            catch (Exception exception)
-            {
-                Debug.LogError($"模块 {CurBundleModuleName} 热更新回滚失败：{exception}");
-            }
-            finally
-            {
-                // 回滚成功后再清理事务材料；失败时保留日志和备份，下一次启动可继续恢复。
-                if (rollbackSucceeded)
-                {
-                    bool stagingRemoved = TryDeleteDirectory(mTransactionStagingPath, "热更新临时目录");
-                    
-                    bool manifestStagingRemoved = TryDeleteFile(mTransactionManifestStagingPath, "热更新 Manifest 临时文件");
-                    
-                    if (stagingRemoved && manifestStagingRemoved)
-                        TryDeleteFile(mTransactionJournalPath, "热更新事务日志");
-                }
-                ResetTransactionState();
-            }
+            bool rollbackSucceeded = mCommitStrategy.Rollback(mTransactionContext, out Exception failure);
+            if (!rollbackSucceeded)
+                Debug.LogError(
+                    $"模块 {CurBundleModuleName} 热更新回滚失败，事务：{mTransactionContext.TransactionId}，异常：{failure}");
+            ResetTransactionState();
             return rollbackSucceeded;
-        }
-
-        /// <summary>
-        /// 写入跨进程事务日志；日志先落临时文件再重命名，避免进程中断留下半段 JSON。
-        /// </summary>
-        private void WriteTransactionJournal()
-        {
-            HotUpdateTransactionJournal journal = new HotUpdateTransactionJournal
-            {
-                transactionId = mTransactionId,
-                hadFinalSnapshot = mHadFinalSnapshot,
-                hadLocalManifest = mHadLocalManifest
-            };
-            string journalTempPath = mTransactionJournalPath + ".writing";
-            
-            File.WriteAllText(journalTempPath, JsonConvert.SerializeObject(journal, Formatting.Indented));
-            
-            if (File.Exists(mTransactionJournalPath)) throw new IOException($"模块 {CurBundleModuleName} 已存在未处理的热更新事务日志。");
-            
-            File.Move(journalTempPath, mTransactionJournalPath);
-        }
-
-        /// <summary>
-        /// 恢复上次被进程退出打断的目录切换；完整切换保留新版本，半切换恢复旧版本。
-        /// </summary>
-        private void RecoverInterruptedTransaction(string snapshotParentPath, string finalSnapshotPath)
-        {
-            string journalWritingPath = mTransactionJournalPath + ".writing";
-            if (!File.Exists(mTransactionJournalPath) && File.Exists(journalWritingPath))
-            {
-                // 写日志时退出可能只留下完整或半写入的临时日志；先提升为正式日志，再统一校验并恢复。
-                File.Move(journalWritingPath, mTransactionJournalPath);
-            }
-            if (!File.Exists(mTransactionJournalPath))
-                return;
-
-            HotUpdateTransactionJournal journal;
-            try
-            {
-                journal = JsonConvert.DeserializeObject<HotUpdateTransactionJournal>(File.ReadAllText(mTransactionJournalPath));
-            }
-            catch (Exception exception)
-            {
-                throw new InvalidDataException($"模块 {CurBundleModuleName} 的热更新事务日志损坏，已停止覆盖现有资源。", exception);
-            }
-
-            if (journal == null || !IsValidTransactionId(journal.transactionId))
-                throw new InvalidDataException($"模块 {CurBundleModuleName} 的热更新事务日志标识非法，已停止覆盖现有资源。");
-
-            mTransactionId = journal.transactionId;
-            mTransactionStagingPath = Path.Combine(snapshotParentPath, $".{mTransactionId}.staging");
-            
-            mTransactionBackupPath = Path.Combine(snapshotParentPath, $".{mTransactionId}.backup");
-            
-            mTransactionManifestStagingPath = $"{mLocalHotAssetManifestPath}.{mTransactionId}.staging";
-            
-            mTransactionManifestBackupPath = $"{mLocalHotAssetManifestPath}.{mTransactionId}.backup";
-            
-            mHadFinalSnapshot = journal.hadFinalSnapshot;
-            mHadLocalManifest = journal.hadLocalManifest;
-
-            bool directorySwitchCompleted = Directory.Exists(finalSnapshotPath) && !Directory.Exists(mTransactionStagingPath) && (!mHadFinalSnapshot || Directory.Exists(mTransactionBackupPath));
-            if (directorySwitchCompleted && File.Exists(mTransactionManifestStagingPath))
-            {
-                // 资源目录已经完整提升时优先向前完成 Manifest，避免把已校验的新快照回滚为旧版本。
-                if (mHadLocalManifest && !File.Exists(mTransactionManifestBackupPath) && File.Exists(mLocalHotAssetManifestPath))
-                {
-                    File.Move(mLocalHotAssetManifestPath, mTransactionManifestBackupPath);
-                }
-                else
-                {
-                    DeleteFileIfExists(mLocalHotAssetManifestPath);
-                }
-                File.Move(mTransactionManifestStagingPath, mLocalHotAssetManifestPath);
-            }
-
-            bool switchCompleted =
-                Directory.Exists(finalSnapshotPath) &&
-                File.Exists(mLocalHotAssetManifestPath) &&
-                !Directory.Exists(mTransactionStagingPath) &&
-                !File.Exists(mTransactionManifestStagingPath) &&
-                (!mHadFinalSnapshot || Directory.Exists(mTransactionBackupPath)) &&
-                (!mHadLocalManifest || File.Exists(mTransactionManifestBackupPath));
-            if (switchCompleted)
-            {
-                // 临时快照和临时 Manifest 都已被原子重命名，说明磁盘切换完整；重启后内存会从新配置重新初始化。
-                bool journalRemoved = TryDeleteFile(mTransactionJournalPath, "中断事务日志");
-                if (journalRemoved)
-                {
-                    TryDeleteDirectory(mTransactionBackupPath, "中断事务备份目录");
-                    TryDeleteFile(mTransactionManifestBackupPath, "中断事务 Manifest 备份");
-                }
-                ResetTransactionState();
-                if (!journalRemoved) throw new IOException($"模块 {CurBundleModuleName} 的已提交事务日志无法清理，已停止创建新事务。");
-                return;
-            }
-
-            string interruptedJournalPath = mTransactionJournalPath;
-            RollbackHotUpdateTransaction();
-            if (File.Exists(interruptedJournalPath)) throw new IOException($"模块 {CurBundleModuleName} 的中断事务未能自动回滚，请保留目录并检查磁盘状态。");
         }
 
         private void DispatchCommittedFileCallbacks()
@@ -1517,77 +1451,9 @@ namespace ZM.ZMAsset
                 .TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
         }
 
-        private static void ValidateModuleName(string bundleModule)
-        {
-            if (string.IsNullOrWhiteSpace(bundleModule) ||
-                bundleModule.IndexOfAny(Path.GetInvalidFileNameChars()) >= 0 ||
-                bundleModule.Contains(Path.DirectorySeparatorChar.ToString()) ||
-                bundleModule.Contains(Path.AltDirectorySeparatorChar.ToString()))
-            {
-                throw new InvalidDataException($"非法热更新模块名称：{bundleModule}");
-            }
-        }
-
-        private bool IsValidTransactionId(string transactionId)
-        {
-            string prefix = CurBundleModuleName + "_";
-            return !string.IsNullOrEmpty(transactionId) &&
-                   transactionId.StartsWith(prefix, StringComparison.Ordinal) &&
-                   Guid.TryParseExact(transactionId.Substring(prefix.Length), "N", out _);
-        }
-
-        private static void DeleteDirectoryIfExists(string path)
-        {
-            if (!string.IsNullOrEmpty(path) && Directory.Exists(path))
-                Directory.Delete(path, true);
-        }
-
-        private static void DeleteFileIfExists(string path)
-        {
-            if (!string.IsNullOrEmpty(path) && File.Exists(path))
-                File.Delete(path);
-        }
-
-        private bool TryDeleteDirectory(string path, string operationName)
-        {
-            try
-            {
-                DeleteDirectoryIfExists(path);
-                return true;
-            }
-            catch (Exception exception)
-            {
-                Debug.LogWarning(
-                    $"模块 {CurBundleModuleName} 清理{operationName}失败，可在下次启动继续回收。路径：{path}，异常：{exception}");
-                return false;
-            }
-        }
-
-        private bool TryDeleteFile(string path, string operationName)
-        {
-            try
-            {
-                DeleteFileIfExists(path);
-                return true;
-            }
-            catch (Exception exception)
-            {
-                Debug.LogWarning(
-                    $"模块 {CurBundleModuleName} 清理{operationName}失败，可在下次启动继续回收。路径：{path}，异常：{exception}");
-                return false;
-            }
-        }
-
         private void ResetTransactionState()
         {
-            mTransactionStagingPath = null;
-            mTransactionBackupPath = null;
-            mTransactionManifestStagingPath = null;
-            mTransactionManifestBackupPath = null;
-            mTransactionJournalPath = null;
-            mTransactionId = null;
-            mHadFinalSnapshot = false;
-            mHadLocalManifest = false;
+            mTransactionContext = null;
         }
 
         /// <summary>
@@ -1608,7 +1474,7 @@ namespace ZM.ZMAsset
 
         public void OnMainThreadUpdate()
         {
-            mAssetsDownLoader?.OnMainThreadUpdate();
+            mAssetsDownLoader?.UpdateOnMainThread();
         }
         /// <summary>
         /// 设置下载线程个数
@@ -1619,7 +1485,7 @@ namespace ZM.ZMAsset
             Debug.Log("多线程负载均衡:"+threadCount+" ModuleType:"+CurBundleModuleName);
             if (mAssetsDownLoader!=null)
             {
-                mAssetsDownLoader.MAX_THREAD_COUNT = threadCount;
+                mAssetsDownLoader.MaximumConcurrency = threadCount;
             }
         }
         /// <summary>

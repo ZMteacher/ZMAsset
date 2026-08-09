@@ -581,7 +581,7 @@ namespace ZM.ZMAsset
         /// <summary>
         /// 闲时预下载整个模块的远端文件；Editor 加载模式下资源全在本地，直接返回空成功结果。
         /// </summary>
-        public async UniTask<RemotePreDownloadResult> PreDownloadModuleAsync(string moduleName, Action<float> onProgress = null)
+        public async UniTask<RemotePreDownloadResult> PreDownloadModuleAsync(string moduleName, Action<float> onProgress = null, System.Threading.CancellationToken cancellationToken = default)
         {
             if (string.IsNullOrWhiteSpace(moduleName) || moduleName == BundleModuleName.None)
             {
@@ -596,13 +596,13 @@ namespace ZM.ZMAsset
                 return new RemotePreDownloadResult(moduleName, true, 0, 0, null);
             }
 #endif
-            return await RemoteAssetSystem.Instance.PreDownloadModuleAsync(moduleName, onProgress);
+            return await RemoteAssetSystem.Instance.PreDownloadModuleAsync(moduleName, onProgress, cancellationToken);
         }
 
         /// <summary>
         /// 闲时预下载指定资源的主 Bundle 及其同模块依赖；Editor 加载模式下直接返回空成功结果。
         /// </summary>
-        public async UniTask<RemotePreDownloadResult> PreDownloadAssetAsync(string path, string moduleName, Action<float> onProgress = null)
+        public async UniTask<RemotePreDownloadResult> PreDownloadAssetAsync(string path, string moduleName, Action<float> onProgress = null, System.Threading.CancellationToken cancellationToken = default)
         {
             if (string.IsNullOrEmpty(path))
             {
@@ -624,7 +624,7 @@ namespace ZM.ZMAsset
             }
 #endif
             uint crc = Crc32.GetCrc32(path);
-            return await RemoteAssetSystem.Instance.PreDownloadAssetAsync(moduleName, crc, onProgress);
+            return await RemoteAssetSystem.Instance.PreDownloadAssetAsync(moduleName, crc, onProgress, cancellationToken);
         }
         /// <summary>
         /// 克隆并且等待资源下载完成克隆
@@ -720,6 +720,49 @@ namespace ZM.ZMAsset
         {
             LoadResource<T>(path);
         }
+
+        /// <summary>
+        /// 异步准备场景 Bundle，并把它纳入现有资源缓存和模块释放生命周期。
+        /// 该两阶段接口避免 WebGL 在 LoadSceceAsync 的同步返回点阻塞浏览器主线程。
+        /// </summary>
+        public async UniTask<bool> PrepareSceneAsync(string path)
+        {
+            if (!path.EndsWith(".unity", StringComparison.OrdinalIgnoreCase))
+                path += ".unity";
+
+#if UNITY_EDITOR
+            if (BundleSettings.Instance.loadAssetType == LoadAssetEnum.Editor)
+                return UnityEditor.AssetDatabase.LoadAssetAtPath<UnityEditor.SceneAsset>(path) != null;
+#endif
+
+            uint crc = Crc32.GetCrc32(path);
+            if (!TryBeginModuleOperation(crc, nameof(PrepareSceneAsync), out string operationModule))
+                return false;
+
+            try
+            {
+                BundleItem cachedItem = GetCacheItemFormAssetDic(crc);
+                if (cachedItem?.assetBundle != null)
+                    return true;
+
+                BundleItem loadedItem = await AssetBundleManager.Instance.LoadAssetBundleAsync(crc);
+                if (loadedItem?.assetBundle == null)
+                {
+                    Debug.LogError($"异步准备场景 Bundle 失败：{path}");
+                    return false;
+                }
+
+                loadedItem.path = path;
+                loadedItem.crc = crc;
+                TrackLoadedAsset(crc, loadedItem, path);
+                return true;
+            }
+            finally
+            {
+                EndModuleOperation(operationModule);
+            }
+        }
+
         public   AsyncOperation LoadSceceAsync(string path,LoadSceneMode loadSceneMode= LoadSceneMode.Additive)
         {
             if (!path.EndsWith(".unity")) path += ".unity";
@@ -762,6 +805,13 @@ namespace ZM.ZMAsset
                         item.crc = crc;
                         TrackLoadedAsset(crc, item, path);
                     }
+                }
+                if (item?.assetBundle == null)
+                {
+                    Debug.LogError(
+                        $"场景 Bundle 尚未准备完成：{path}。WebGL 请先 await ZMAsset.Resources.PrepareSceneAsync(path)。");
+                    EndModuleOperation(operationModule);
+                    return null;
                 }
                 AsyncOperation sceneOperation = SceneManager.LoadSceneAsync(sceneName, loadSceneMode);
                 if (sceneOperation == null)
@@ -855,7 +905,7 @@ namespace ZM.ZMAsset
                 }
                 else
                 {
-                    Debug.LogError("item is null ...Path:" + path);
+                    // AssetBundleManager 已记录模块、Bundle 和平台上下文，此处只传播失败，避免重复且不可操作的空对象日志。
                     return null;
                 }
             }
@@ -924,7 +974,7 @@ namespace ZM.ZMAsset
                 }
                 else
                 {
-                    Debug.LogError("item is null ...Path:" + path);
+                    // AssetBundleManager 已记录真正失败原因；批量同步入口不再用泛化的 item null 覆盖诊断重点。
                     return null;
                 }
             }

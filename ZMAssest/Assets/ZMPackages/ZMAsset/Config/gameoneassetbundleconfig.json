@@ -1,0 +1,38 @@
+{
+  "formatVersion": 2,
+  "moduleName": "GameOne",
+  "moduleDependencies": [
+    "Shared"
+  ],
+  "bundleInfoList": [
+    {
+      "path": "Assets/GameData/GameOne/Prefabs/Windows/GameOneWindow.prefab",
+      "crc": 1501823804,
+      "bundleName": "gameone_gameonewindow.uab",
+      "assetName": "GameOneWindow.prefab",
+      "bundleModule": "GameOne",
+      "isAddressableAsset": false,
+      "isLoadableEntry": true,
+      "bundleDependce": [
+        "shared_shared_61af1767_01.uab"
+      ],
+      "bundleDependencies": [
+        {
+          "bundleModule": "Shared",
+          "bundleName": "shared_shared_61af1767_01.uab"
+        }
+      ]
+    },
+    {
+      "path": "Assets/ZMPackages/ZMAsset/Config/gameoneassetbundleconfig.json",
+      "crc": 2044692124,
+      "bundleName": "gameonebundleconfig.uab",
+      "assetName": "gameoneassetbundleconfig.json",
+      "bundleModule": "GameOne",
+      "isAddressableAsset": false,
+      "isLoadableEntry": false,
+      "bundleDependce": [],
+      "bundleDependencies": []
+    }
+  ]
+}

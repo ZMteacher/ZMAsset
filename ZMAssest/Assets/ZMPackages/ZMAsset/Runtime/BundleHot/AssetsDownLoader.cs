@@ -50,7 +50,12 @@ namespace ZM.ZMAsset
         /// <summary>
         /// 当前热更的资源模块
         /// </summary>
-        private HotAssetsModule mCurHotAssetsModule;
+        private string mModuleName;
+
+        /// <summary>
+        /// 下载线程写入字节后的统计回调；由热更新模块持有统计状态，下载器不再反向依赖模块对象。
+        /// </summary>
+        private Action<int> mBytesDownloaded;
         /// <summary>
         /// 文件下载队列
         /// </summary>
@@ -101,11 +106,36 @@ namespace ZM.ZMAsset
         /// <param name="downLoadFinish">所有文件下载完成的回调</param>
         public AssetsDownLoader(HotAssetsModule assetModule, Queue<HotFileInfo> downLoadQueue, string downloadUrl, string hotAssetsSavePath,
             DownLoadEvent downLoadSuccess, DownLoadEvent downLoadFailed, DownLoadEvent downLoadFinish)
+            : this(
+                assetModule.CurBundleModuleName,
+                downLoadQueue,
+                downloadUrl,
+                hotAssetsSavePath,
+                assetModule.AddDownloadedBytes,
+                downLoadSuccess,
+                downLoadFailed,
+                downLoadFinish)
         {
-            this.mCurHotAssetsModule = assetModule;
+        }
+
+        /// <summary>
+        /// Native 下载服务使用的构造入口；仅注入模块标识和统计回调，不改变现有下载队列算法。
+        /// </summary>
+        internal AssetsDownLoader(
+            string moduleName,
+            Queue<HotFileInfo> downLoadQueue,
+            string downloadUrl,
+            string hotAssetsSavePath,
+            Action<int> bytesDownloaded,
+            DownLoadEvent downLoadSuccess,
+            DownLoadEvent downLoadFailed,
+            DownLoadEvent downLoadFinish)
+        {
+            this.mModuleName = moduleName;
             this.mDownLoadQueue = downLoadQueue;
             this.mAssetsDownLoadUrl = downloadUrl;
             this.mHotAssetsSavePath = hotAssetsSavePath;
+            this.mBytesDownloaded = bytesDownloaded;
             this.OnDownLoadSuccess = downLoadSuccess;
             this.OnDownLoadFailed = downLoadFailed;
             this.OnDownLoadFinish = downLoadFinish;
@@ -161,10 +191,11 @@ namespace ZM.ZMAsset
                 {
                     HotFileInfo hotFileInfo = mDownLoadQueue.Dequeue();
                     DownLoadThread downloadItem = new DownLoadThread(
-                        mCurHotAssetsModule,
+                        mModuleName,
                         hotFileInfo,
                         mAssetsDownLoadUrl,
-                        mHotAssetsSavePath);
+                        mHotAssetsSavePath,
+                        mBytesDownloaded);
                     // 先登记活动任务再启动，避免极快失败时回调先于列表登记。
                     mAllDownLoadThreadList.Add(downloadItem);
                     downloadItems.Add(downloadItem);

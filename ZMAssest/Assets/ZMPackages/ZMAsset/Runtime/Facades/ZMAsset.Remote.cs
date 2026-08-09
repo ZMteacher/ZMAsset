@@ -1,6 +1,7 @@
 using System;
 using Cysharp.Threading.Tasks;
 using UnityEngine;
+using System.Threading;
 
 namespace ZM.ZMAsset
 {
@@ -39,10 +40,10 @@ namespace ZM.ZMAsset
             /// </summary>
             /// <param name="moduleName">资源物理归属模块。</param>
             /// <param name="onProgress">可选的整体进度回调（0~1）=(已完成文件数+当前文件进度)/待下载总数。</param>
-            public static UniTask<RemotePreDownloadResult> PreDownloadAsync(string moduleName, Action<float> onProgress = null)
+            public static UniTask<RemotePreDownloadResult> PreDownloadAsync(string moduleName, Action<float> onProgress = null, CancellationToken cancellationToken = default)
             {
                 ValidateModuleName(moduleName);
-                return GetLoader().PreDownloadModuleAsync(moduleName, onProgress);
+                return GetLoader().PreDownloadModuleAsync(moduleName, onProgress, cancellationToken);
             }
 
             /// <summary>
@@ -51,11 +52,11 @@ namespace ZM.ZMAsset
             /// <param name="path">项目相对资源路径。</param>
             /// <param name="moduleName">资源物理归属模块。</param>
             /// <param name="onProgress">可选的整体进度回调（0~1）。</param>
-            public static UniTask<RemotePreDownloadResult> PreDownloadAsync(string path, string moduleName, Action<float> onProgress = null)
+            public static UniTask<RemotePreDownloadResult> PreDownloadAsync(string path, string moduleName, Action<float> onProgress = null, CancellationToken cancellationToken = default)
             {
                 ValidateAssetPath(path);
                 ValidateModuleName(moduleName);
-                return GetLoader().PreDownloadAssetAsync(path, moduleName, onProgress);
+                return GetLoader().PreDownloadAssetAsync(path, moduleName, onProgress, cancellationToken);
             }
 
             /// <summary>
