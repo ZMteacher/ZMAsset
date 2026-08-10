@@ -97,6 +97,11 @@ namespace ZM.ZMAsset
         /// </summary>
         internal string DownloadUrl => mActiveManifest?.downLoadURL;
 
+        /// <summary>
+        /// 当前进程是否已经取得可用 Manifest；本地状态查询据此区分“未声明文件”和“尚无法判断”。
+        /// </summary>
+        internal bool HasActiveManifest => mActiveManifest != null;
+
         internal bool UsesBrowserCache =>
             AssetRuntimeBackendFactory.Current.PlatformKind == AssetRuntimePlatformKind.WebGL;
 
@@ -273,7 +278,9 @@ namespace ZM.ZMAsset
             string url =
                 $"{BundleSettings.Instance.AssetBundleDownLoadUrl}/HotAssets/{ModuleName}/{BundleSettings.Instance.HotManifestName(ModuleName)}";
 
-            Debug.Log($"远端资源 Manifest 下载，模块：{ModuleName}，地址：{url}，超时：{timeoutSeconds}s");
+            Debug.Log(
+                $"远端资源 Manifest 下载，模块：{ModuleName}，" +
+                $"地址：{AssetLogUtility.SanitizeUrl(url)}，超时：{timeoutSeconds}s");
             using (UnityWebRequest request = UnityWebRequest.Get(url))
             {
                 request.timeout = timeoutSeconds;
@@ -378,6 +385,39 @@ namespace ZM.ZMAsset
                 Debug.LogError($"远端资源 Manifest 缓存读取失败，模块：{ModuleName}，异常：{exception}");
                 return null;
             }
+        }
+
+        /// <summary>
+        /// 只读取上一次原子提交的 Native Manifest 并重建本地文件状态，不访问服务器，也不把模块标记为远端初始化完成。
+        /// 正常 Remote 加载随后仍会刷新服务器 Manifest，避免一次状态查询冻结远端版本。
+        /// </summary>
+        internal async UniTask<bool> TryLoadCommittedManifestForLocalQueryAsync()
+        {
+            if (mActiveManifest != null)
+                return true;
+            if (UsesBrowserCache)
+                return false;
+
+            mCommitStrategy.RecoverVerifiedFile(
+                RemoteManifestCachePath,
+                $"{ModuleName}_remote_manifest_local_query_recovery",
+                ModuleName,
+                "RemoteManifest");
+
+            HotAssetsManifest cachedManifest = await LoadCachedManifestAsync();
+            if (!TryValidateManifest(cachedManifest, out string failureReason))
+            {
+                if (cachedManifest != null)
+                {
+                    Debug.LogWarning(
+                        $"远端资源本地状态查询忽略无效 Manifest，模块：{ModuleName}，原因：{failureReason}");
+                }
+                return false;
+            }
+
+            mActiveManifest = cachedManifest;
+            RebuildFileIndexes(cachedManifest, verifyIntegrity: false);
+            return true;
         }
 
         /// <summary>
@@ -496,9 +536,9 @@ namespace ZM.ZMAsset
                     return false;
                 }
 
-                if (fileInfo.abName.IndexOf('/') >= 0 || fileInfo.abName.IndexOf('\\') >= 0 || fileInfo.abName.Contains(".."))
+                if (!AssetBundleNameValidator.TryValidateFileName(fileInfo.abName, out string fileNameFailure))
                 {
-                    failureReason = $"文件名称包含非法路径片段：{fileInfo.abName}";
+                    failureReason = $"文件名称无效：{fileInfo.abName}，原因：{fileNameFailure}";
                     return false;
                 }
 

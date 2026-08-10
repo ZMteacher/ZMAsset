@@ -12,11 +12,10 @@
 ------------------------------------------------------------------------------------------------------------------------------------------------*/
 
 using System;
+using System.Threading;
 using Cysharp.Threading.Tasks;
 using UnityEngine;
 using UnityEngine.SceneManagement;
-using UnityEngine.UI;
-using ZM.ZMAsset;
 
 namespace ZM.ZMAsset
 {
@@ -44,39 +43,48 @@ namespace ZM.ZMAsset
         long InstantiateAndLoad(string path, Transform parent, Action<GameObject, object, object> loadAsync,
             Action loading, object param1, object param2);
 
-        UniTask<T> LoadResourceAsync<T>(string path) where T : UnityEngine.Object;
-        UniTask<T> LoadResourceAsync<T>(string path,bool isEncrypt) where T : UnityEngine.Object;
+        UniTask<AssetHandle<T>> LoadResourceAsync<T>(string path, CancellationToken cancellationToken = default)
+            where T : UnityEngine.Object;
+
+        UniTask<AssetHandle<T>> LoadResourceAsync<T>(
+            string path,
+            bool isEncrypt,
+            CancellationToken cancellationToken = default) where T : UnityEngine.Object;
+
         void RemoveObjectLoadCallBack(long loadid);
 
         void Release(GameObject obj, bool destroyCache = false);
 
-        void Release(Texture texture);
-
         void Release(AssetsRequest request);
 
-        Sprite LoadSprite(string path);
+        AssetHandle<Sprite> LoadSprite(string path);
 
-        Texture LoadTexture(string path);
+        AssetHandle<Texture> LoadTexture(string path);
 
-        AudioClip LoadAudio(string path);
+        AssetHandle<AudioClip> LoadAudio(string path);
 
-        TextAsset LoadTextAsset(string path);
+        AssetHandle<TextAsset> LoadTextAsset(string path);
         /// <summary>
         /// 异步准备场景所属 Bundle，使随后保持原签名的 LoadSceceAsync 可以立即返回 Unity AsyncOperation。
         /// WebGL 无法在返回 AsyncOperation 的同步入口中等待网络，因此场景首次加载前必须调用该方法。
         /// </summary>
         UniTask<bool> PrepareSceneAsync(string path);
         AsyncOperation LoadSceceAsync(string path, LoadSceneMode loadSceneMode = LoadSceneMode.Additive);
-        T LoadScriptableObject<T>(string path) where T : UnityEngine.Object;
+        AssetHandle<T> LoadScriptableObject<T>(string path) where T : UnityEngine.Object;
 
-        void LoadResourceAsync<T>(string path, Action<UnityEngine.Object, object> loadAsync, object param1 = null) where T : UnityEngine.Object;
-        UnityEngine.Sprite LoadAtlasSprite(string atlasPath, string spriteName);
+        AssetHandle<UnityEngine.Sprite> LoadAtlasSprite(string atlasPath, string spriteName);
 
-        UnityEngine.Sprite LoadPNGAtlasSprite(string atlasPath, string spriteName);
+        UniTask<AssetHandle<UnityEngine.Sprite>> LoadAtlasSpriteAsync(
+            string atlasPath,
+            string spriteName,
+            CancellationToken cancellationToken = default);
 
-        long LoadTextureAsync(string path, Action<Texture, object> loadAsync, object param1 = null);
+        AssetHandle<UnityEngine.Sprite> LoadPNGAtlasSprite(string atlasPath, string spriteName);
 
-        long LoadSpriteAsync(string path, Image image, bool setNativeSize = false, Action<Sprite> loadAsync = null);
+        UniTask<AssetHandle<UnityEngine.Sprite>> LoadPNGAtlasSpriteAsync(
+            string atlasPath,
+            string spriteName,
+            CancellationToken cancellationToken = default);
 
         void ClearAllAsyncLoadTask();
 
@@ -86,7 +94,8 @@ namespace ZM.ZMAsset
         /// 清理指定资源模块中由框架跟踪的缓存和对象。
         /// </summary>
         /// <remarks>
-        /// ForceTrackedObjects 不负责业务代码持有的 Texture、Sprite、AudioClip、TextAsset 等裸引用。
+        /// PooledOnly 会拒绝清理仍有活动 AssetHandle 的资源；ForceTrackedObjects 会使这些句柄失效，
+        /// 调用方必须保证之后不再访问对应资源对象。
         /// </remarks>
         UniTask<ModuleClearResult> ClearModuleAssetsAsync(string bundleModule, ModuleClearMode mode = ModuleClearMode.PooledOnly);
 

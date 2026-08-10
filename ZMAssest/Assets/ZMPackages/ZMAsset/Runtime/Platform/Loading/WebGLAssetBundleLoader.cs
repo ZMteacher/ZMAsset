@@ -32,7 +32,7 @@ namespace ZM.ZMAsset
                 {
                     throw new InvalidOperationException(
                         $"WebGL AssetBundle 请求失败。模块：{location.ModuleName}，Bundle：{location.BundleName}，" +
-                        $"来源：{location.SourceKind}，地址：{RemoveQuery(location.UriOrPath)}，" +
+                        $"来源：{location.SourceKind}，地址：{AssetLogUtility.SanitizeUrl(location.UriOrPath)}，" +
                         $"UnityWebRequest：{webRequest.result}，错误：{webRequest.error}");
                 }
 
@@ -41,7 +41,7 @@ namespace ZM.ZMAsset
                 {
                     throw new InvalidOperationException(
                         $"WebGL 请求已完成，但没有取得 AssetBundle。模块：{location.ModuleName}，" +
-                        $"Bundle：{location.BundleName}，地址：{RemoveQuery(location.UriOrPath)}");
+                        $"Bundle：{location.BundleName}，地址：{AssetLogUtility.SanitizeUrl(location.UriOrPath)}");
                 }
 
                 return assetBundle;
@@ -104,18 +104,6 @@ namespace ZM.ZMAsset
                 string.IsNullOrWhiteSpace(location.ContentHash))
                 throw new InvalidOperationException(
                     $"WebGL {location.SourceKind} 缺少浏览器缓存 Hash。模块：{location.ModuleName}，Bundle：{location.BundleName}。");
-        }
-
-        /// <summary>
-        /// 诊断只展示不含查询参数的逻辑地址，避免未来带签名 URL 时把敏感参数写入日志。
-        /// </summary>
-        private static string RemoveQuery(string url)
-        {
-            if (string.IsNullOrEmpty(url))
-                return string.Empty;
-
-            int queryIndex = url.IndexOf('?');
-            return queryIndex < 0 ? url : url.Substring(0, queryIndex);
         }
     }
 }

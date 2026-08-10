@@ -13,11 +13,11 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Threading;
 using Cysharp.Threading.Tasks;
 using UnityEngine;
 using UnityEngine.SceneManagement;
 using UnityEngine.U2D;
-using UnityEngine.UI;
 using Object = UnityEngine.Object;
 
 namespace ZM.ZMAsset
@@ -72,21 +72,67 @@ namespace ZM.ZMAsset
         public object param2;
         public object param3;
 
-        public void Release()
+        private ResourceManager mOwner;
+        private bool mIsReleased = true;
+
+        internal void Initialize(
+            ResourceManager owner,
+            object parameter1,
+            object parameter2,
+            object parameter3)
         {
-            if (obj != null)
-                ZMAsset.Resources.Release(obj);
-            // 必须先清空请求数据再归还对象池，避免池对象被重新取出后又被旧调用栈篡改。
+            mOwner = owner ?? throw new ArgumentNullException(nameof(owner));
+            mIsReleased = false;
+            obj = null;
+            param1 = parameter1;
+            param2 = parameter2;
+            param3 = parameter3;
+        }
+
+        internal bool TryBeginRelease(out GameObject instance)
+        {
+            instance = null;
+            if (mIsReleased)
+                return false;
+
+            mIsReleased = true;
+            instance = obj;
             obj = null;
             param1 = null;
             param2 = null;
             param3 = null;
-            ZMAsset.Resources.Release(this);
+            mOwner = null;
+            return true;
+        }
+
+        /// <summary>
+        /// 归还该请求持有的实例和请求对象。重复调用是安全的。
+        /// </summary>
+        public void Release()
+        {
+            mOwner?.Release(this);
         }
     }
 
-    public class ResourceManager : IResourceInterface, IRemoteAssetLoader
+    public class ResourceManager : IResourceInterface, IRemoteAssetLoader, IAssetHandleOwner
     {
+        private enum AssetHandleReleasePolicy
+        {
+            RetainUntilAssetEviction,
+            DestroyOnHandleRelease
+        }
+
+        private sealed class AssetHandleRecord
+        {
+            public long handleId;
+            public uint crc;
+            public string path;
+            public string bundleModuleType;
+            public UnityEngine.Object asset;
+            public AssetHandleState state;
+            public AssetHandleReleasePolicy releasePolicy;
+        }
+
         private sealed class ModuleResourceState
         {
             public readonly HashSet<uint> loadedAssetCrcs = new HashSet<uint>();
@@ -107,6 +153,17 @@ namespace ZM.ZMAsset
         /// 所有对象字典
         /// </summary>
         private Dictionary<int, CacheObejct> mAllObjectDic = new Dictionary<int, CacheObejct>();
+        // 每次业务加载都拥有独立 HandleId；CRC 反向集合用于模块门禁和最后一个句柄释放判定。
+        private readonly Dictionary<long, AssetHandleRecord> mAssetHandleRecords =
+            new Dictionary<long, AssetHandleRecord>();
+        private readonly Dictionary<uint, HashSet<long>> mAssetHandleIdsByCrc =
+            new Dictionary<uint, HashSet<long>>();
+        // 异步句柄加载完成到句柄交付之间仍属于活动消费者；延迟回滚必须等全部消费者退出。
+        private readonly Dictionary<uint, int> mAssetLoadConsumerCountByCrc =
+            new Dictionary<uint, int>();
+        private readonly HashSet<uint> mDeferredAssetRollbackCrcs = new HashSet<uint>();
+        private readonly int mAssetHandleMainThreadId = Thread.CurrentThread.ManagedThreadId;
+        private long mAssetHandleGuid;
         //00 反向索引只保存主缓存键，不复制 BundleItem 或 UnityEngine.Object。
         private readonly Dictionary<string, ModuleResourceState> mModuleResourceStateDic =
             new Dictionary<string, ModuleResourceState>(StringComparer.Ordinal);
@@ -114,10 +171,6 @@ namespace ZM.ZMAsset
         /// 缓存对象类对象池
         /// </summary>
         private ClassObjectPool<CacheObejct> mCacheObejctPool = new ClassObjectPool<CacheObejct>(150);
-        /// <summary>
-        /// 缓存资源请求对象池
-        /// </summary>
-        private ClassObjectPool<AssetsRequest> mAssetsRequestPool = new ClassObjectPool<AssetsRequest>(50);
         /// <summary>
         /// 异步加载任务列表
         /// </summary>
@@ -258,8 +311,25 @@ namespace ZM.ZMAsset
             for (int i = 0; i < count; i++)
             {
                 AssetsRequest request = await InstantiateAsync(path,null);
+                if (request == null)
+                {
+                    Debug.LogWarning($"预加载实例未完成，已停止后续预加载：{path}");
+                    return;
+                }
                 request.Release();
             }
+        }
+
+        private AssetsRequest CreateAssetsRequest(
+            object parameter1,
+            object parameter2,
+            object parameter3)
+        {
+            // AssetsRequest 会暴露给业务层，无法防止旧引用在对象被池化复用后误释放新请求。
+            // 因此这里刻意为每次加载创建独立请求，实例资源仍由 ResourceManager 对象池管理。
+            AssetsRequest request = new AssetsRequest();
+            request.Initialize(this, parameter1, parameter2, parameter3);
+            return request;
         }
         /// <summary>
         /// 同步克隆物体
@@ -290,7 +360,7 @@ namespace ZM.ZMAsset
                 return cacheObj.obj;
             }
             //加载该对象
-            GameObject obj = LoadResource<GameObject>(path);
+            GameObject obj = LoadResourceInternal<GameObject>(path);
             if (obj != null)
             {
                 CacheObejct nObj = InstantiateObject(path, obj, parent);
@@ -363,7 +433,7 @@ namespace ZM.ZMAsset
         {
             if (obj == null)
             {
-                return mCacheObejctPool.Spawn();
+                return null;
             }
           
         
@@ -373,6 +443,9 @@ namespace ZM.ZMAsset
             {
                 await UniTask.Yield(); // 异步地等待下一帧
             }
+
+            if (request.Result == null || request.Result.Length == 0 || request.Result[0] == null)
+                return null;
 
             obj = request.Result[0];
             CacheObejct cacheObejct = mCacheObejctPool.Spawn();
@@ -408,6 +481,10 @@ namespace ZM.ZMAsset
                 loadAsync?.Invoke(null, param1);
                 return;
             }
+            bool wasAlreadyCached = mAlreayLoadAssetsDic.ContainsKey(crc);
+            long loadTaskId = -1;
+            bool ownershipDelivered = false;
+            BeginAssetLoadConsumer(crc);
             try
             {
             //先从对象池中查询这个对象，如果存在就直接使用
@@ -417,40 +494,51 @@ namespace ZM.ZMAsset
                 cacheObj.obj.transform.SetParent(parent);
                 //尝试使用原始数据
                 TryUseOriginData(cacheObj);
+                ownershipDelivered = true;
                 loadAsync?.Invoke(cacheObj.obj, param1);
                 return;
             }
             //获取异步加载任务唯一id
-            long guid = mAsyncTaskGuid;
-            RegisterAsyncTask(guid, Crc32.GetCrc32(path));
+            loadTaskId = mAsyncTaskGuid;
+            RegisterAsyncTask(loadTaskId, crc);
             //开始异步加载资源
-            GameObject obj = await LoadResourceAsync<GameObject>(path,false);
+            GameObject obj = await LoadResourceAsyncInternal<GameObject>(path, false);
             
             //异步加载完成
             if (obj != null)
             {
-                if (mAsyncLoadingTaskList.Contains(guid))
+                if (mAsyncLoadingTaskList.Contains(loadTaskId))
                 {
-                    CompleteAsyncTask(guid);
                     CacheObejct nObj = await InstantiateObjectAsync(path, obj, parent);
-                    loadAsync?.Invoke(nObj.obj, param1);
+                    if (nObj?.obj == null && !wasAlreadyCached)
+                        RequestDeferredAssetRollback(crc);
+                    ownershipDelivered = nObj?.obj != null;
+                    loadAsync?.Invoke(nObj?.obj, param1);
                 }
                 else
                 {
                     // 任务已被模块清理取消：归还加载结果的所有权，避免缓存与 Bundle 泄漏
-                    CompleteAsyncTask(guid);
-                    EvictLoadedAsset(crc, false);
+                    if (!wasAlreadyCached)
+                        RequestDeferredAssetRollback(crc);
                     Debug.Log("Async Task already Cancel, release loaded asset. Path:" + path);
+                    loadAsync?.Invoke(null, param1);
                 }
             }
             else
             {
-                CompleteAsyncTask(guid);
+                if (!wasAlreadyCached)
+                    RequestDeferredAssetRollback(crc);
                 Debug.LogError("Async Load GameObject is Null Path:" + path);
+                loadAsync?.Invoke(null, param1);
             }
             }
             finally
             {
+                if (loadTaskId != -1)
+                    CompleteAsyncTask(loadTaskId);
+                if (!ownershipDelivered)
+                    RequestDeferredAssetRollback(crc);
+                EndAssetLoadConsumer(crc, true);
                 EndModuleOperation(operationModule);
             }
         }
@@ -466,12 +554,14 @@ namespace ZM.ZMAsset
             path = path.EndsWith(".prefab") ? path : path + ".prefab";
             uint crc = Crc32.GetCrc32(path);
             if (!TryBeginModuleOperation(crc, nameof(InstantiateAsync), out string operationModule)) return null;
+            AssetsRequest request = null;
+            long loadTaskId = -1;
+            bool wasAlreadyCached = mAlreayLoadAssetsDic.ContainsKey(crc);
+            bool ownershipDelivered = false;
+            BeginAssetLoadConsumer(crc);
             try
             {
-            AssetsRequest request = mAssetsRequestPool.Spawn();
-            request.param1 = param1;
-            request.param2 = param2;
-            request.param3 = param3;
+            request = CreateAssetsRequest(param1, param2, param3);
             //先从对象池中查询这个对象，如果存在就直接使用
             CacheObejct cacheObj = GetCacheObjFromPools(crc);
             if (cacheObj != null && cacheObj.obj != null)
@@ -480,38 +570,52 @@ namespace ZM.ZMAsset
                 //尝试使用原始数据
                 TryUseOriginData(cacheObj);
                 request.obj = cacheObj.obj;
+                ownershipDelivered = true;
                 return request;
             }
             //获取异步加载任务唯一id
-            long guid = mAsyncTaskGuid;
-            RegisterAsyncTask(guid, Crc32.GetCrc32(path));
+            loadTaskId = mAsyncTaskGuid;
+            RegisterAsyncTask(loadTaskId, crc);
             //开始异步加载资源
-            GameObject loadObj= await LoadResourceAsync<GameObject>(path,false);
+            GameObject loadObj = await LoadResourceAsyncInternal<GameObject>(path, false);
             if (loadObj == null)
             {
+                if (!wasAlreadyCached)
+                    RequestDeferredAssetRollback(crc);
                 Debug.LogError("Load GameObject Failed Path：" + path);
-                request.obj = new GameObject("Laod ErrorObj");//创建空物体，增加鲁棒性，防止报空后的游戏逻辑阻塞
-                return request;
+                return null;
             }
-            if (mAsyncLoadingTaskList.Contains(guid))
+            if (mAsyncLoadingTaskList.Contains(loadTaskId))
             {
-                CompleteAsyncTask(guid);
                 CacheObejct nObj = await InstantiateObjectAsync(path,loadObj, parent);
+                if (nObj?.obj == null)
+                {
+                    if (!wasAlreadyCached)
+                        RequestDeferredAssetRollback(crc);
+                    return null;
+                }
                 request.obj = nObj.obj;
+                ownershipDelivered = true;
                 return request;
             }
             else
             {
                 // 任务已被模块清理取消：归还加载结果的所有权，避免缓存与 Bundle 泄漏
-                CompleteAsyncTask(guid);
-                EvictLoadedAsset(crc, false);
+                if (!wasAlreadyCached)
+                    RequestDeferredAssetRollback(crc);
                 Debug.LogError("Async Task already Cancel, release loaded asset. Path:" + path);
-                request.obj = new GameObject("Laod ErrorObj");//创建空物体，增加鲁棒性，防止报空后的游戏逻辑阻塞
-                return request;
+                return null;
             }
             }
             finally
             {
+                if (loadTaskId != -1)
+                    CompleteAsyncTask(loadTaskId);
+                if (request != null && request.obj == null)
+                    Release(request);
+                if (!ownershipDelivered)
+                    RequestDeferredAssetRollback(crc);
+                EndAssetLoadConsumer(crc, true);
                 EndModuleOperation(operationModule);
             }
         }
@@ -532,12 +636,12 @@ namespace ZM.ZMAsset
             if (!TryBeginModuleOperation(crc, nameof(InstantiateRemoteAsync), out string operationModule, moduleName)) return null;
             AssetsRequest request = null;
             long loadTaskId = -1;
+            bool wasAlreadyCached = mAlreayLoadAssetsDic.ContainsKey(crc);
+            bool ownershipDelivered = false;
+            BeginAssetLoadConsumer(crc);
             try
             {
-                request = mAssetsRequestPool.Spawn();
-                request.param1 = param1;
-                request.param2 = param2;
-                request.param3 = param3;
+                request = CreateAssetsRequest(param1, param2, param3);
 
                 CacheObejct cacheObj = GetCacheObjFromPools(crc);
                 if (cacheObj != null && cacheObj.obj != null)
@@ -545,28 +649,42 @@ namespace ZM.ZMAsset
                     cacheObj.obj.transform.SetParent(parent);
                     TryUseOriginData(cacheObj);
                     request.obj = cacheObj.obj;
+                    ownershipDelivered = true;
                     return request;
                 }
 
                 loadTaskId = mAsyncTaskGuid;
                 RegisterAsyncTask(loadTaskId, crc);
-                GameObject loadedPrefab = await LoadRemoteAsync<GameObject>(path, moduleName, onProgress);
+                GameObject loadedPrefab = await LoadRemoteAsyncInternal<GameObject>(
+                    path,
+                    moduleName,
+                    onProgress);
                 if (loadedPrefab == null)
+                {
+                    if (!wasAlreadyCached)
+                        RequestDeferredAssetRollback(crc);
                     return null;
+                }
 
                 if (!mAsyncLoadingTaskList.Contains(loadTaskId))
                 {
                     Debug.LogWarning($"远端资源实例化已取消，路径：{path}");
                     // 归还加载结果的所有权，避免缓存与 Bundle 泄漏
-                    EvictLoadedAsset(crc, false);
+                    if (!wasAlreadyCached)
+                        RequestDeferredAssetRollback(crc);
                     return null;
                 }
 
                 CacheObejct instantiatedObject = await InstantiateObjectAsync(path, loadedPrefab, parent);
                 if (instantiatedObject?.obj == null)
+                {
+                    if (!wasAlreadyCached)
+                        RequestDeferredAssetRollback(crc);
                     return null;
+                }
 
                 request.obj = instantiatedObject.obj;
+                ownershipDelivered = true;
                 return request;
             }
             finally
@@ -574,10 +692,98 @@ namespace ZM.ZMAsset
                 if (loadTaskId != -1)
                     CompleteAsyncTask(loadTaskId);
                 if (request != null && request.obj == null)
-                    mAssetsRequestPool.Recycl(request);
+                    Release(request);
+                if (!ownershipDelivered)
+                    RequestDeferredAssetRollback(crc);
+                EndAssetLoadConsumer(crc, true);
                 EndModuleOperation(operationModule);
             }
         }
+
+        /// <summary>
+        /// 查询远端资源当前是否具备无需下载即可加载的主 Bundle 与依赖闭包。
+        /// </summary>
+        public async UniTask<RemoteAssetLocalResult> GetRemoteLocalStatusAsync<T>(
+            string path,
+            string moduleName,
+            CancellationToken cancellationToken = default) where T : UnityEngine.Object
+        {
+            ZMAsset.ValidateAssetPath(path);
+            ZMAsset.ValidateModuleName(moduleName);
+            cancellationToken.ThrowIfCancellationRequested();
+
+#if UNITY_EDITOR
+            if (BundleSettings.Instance.loadAssetType == LoadAssetEnum.Editor)
+            {
+                T editorAsset = UnityEditor.AssetDatabase.LoadAssetAtPath<T>(path);
+                return new RemoteAssetLocalResult(
+                    path,
+                    moduleName,
+                    editorAsset == null
+                        ? RemoteAssetLocalStatus.AssetNotConfigured
+                        : RemoteAssetLocalStatus.Ready,
+                    editorAsset == null ? 0 : 1,
+                    null);
+            }
+#endif
+
+            uint crc = Crc32.GetCrc32(path);
+            if (!TryBeginModuleOperation(
+                    crc,
+                    nameof(GetRemoteLocalStatusAsync),
+                    out string operationModule,
+                    moduleName))
+            {
+                return new RemoteAssetLocalResult(
+                    path,
+                    moduleName,
+                    RemoteAssetLocalStatus.Invalid,
+                    0,
+                    null);
+            }
+
+            try
+            {
+                if (mAlreayLoadAssetsDic.TryGetValue(crc, out BundleItem loadedItem) &&
+                    loadedItem?.obj != null)
+                {
+                    if (!string.Equals(
+                            loadedItem.bundleModuleType,
+                            moduleName,
+                            StringComparison.Ordinal))
+                    {
+                        return new RemoteAssetLocalResult(
+                            path,
+                            moduleName,
+                            RemoteAssetLocalStatus.AssetNotConfigured,
+                            0,
+                            null);
+                    }
+
+                    List<ModuleBundleKey> requiredBundles =
+                        RemoteAssetSystem.CollectRequiredBundleKeys(loadedItem, moduleName);
+                    return new RemoteAssetLocalResult(
+                        path,
+                        moduleName,
+                        loadedItem.obj is T
+                            ? RemoteAssetLocalStatus.Ready
+                            : RemoteAssetLocalStatus.Invalid,
+                        requiredBundles.Count,
+                        null);
+                }
+
+                return await RemoteAssetSystem.Instance.GetLocalStatusAsync(
+                    path,
+                    moduleName,
+                    crc,
+                    cancellationToken);
+            }
+            finally
+            {
+                EndModuleOperation(operationModule);
+            }
+        }
+
         /// <summary>
         /// 闲时预下载整个模块的远端文件；Editor 加载模式下资源全在本地，直接返回空成功结果。
         /// </summary>
@@ -718,7 +924,7 @@ namespace ZM.ZMAsset
         /// <param name="path"></param>
         public void PreLoadResource<T>(string path) where T : UnityEngine.Object
         {
-            LoadResource<T>(path);
+            LoadResourceInternal<T>(path);
         }
 
         /// <summary>
@@ -835,32 +1041,41 @@ namespace ZM.ZMAsset
         }
  
 
-        public T LoadScriptableObject<T>(string path) where T : UnityEngine.Object
+        public AssetHandle<T> LoadScriptableObject<T>(string path) where T : UnityEngine.Object
         {
             if (!path.EndsWith(".asset")) path += ".asset";
             return LoadResource<T>(path);
         }
-        
-        /// <summary>
-        /// 异步加载资源
-        /// </summary>
-        /// <param name="path"></param>
-        /// <param name="loadAsync"></param>
-        /// <param name="param1"></param>
-        /// <typeparam name="T"></typeparam>
-        public void LoadResourceAsync<T>(string path, Action<UnityEngine.Object, object> loadAsync, object param1 = null) where T : Object
-        {
-            LoadResourceAsync<T>(path, (t) => { loadAsync(t, param1);  });
-        }
-
 
         /// <summary>
-        /// 同步加载资源，外部直接调用，仅仅加载不需要实例化的资源
+        /// 同步加载资源并返回一次独立所有权句柄。
         /// </summary>
         /// <typeparam name="T"></typeparam>
         /// <param name="path"></param>
         /// <returns></returns>
-        public T LoadResource<T>(string path) where T : UnityEngine.Object
+        public AssetHandle<T> LoadResource<T>(string path) where T : UnityEngine.Object
+        {
+            if (string.IsNullOrEmpty(path))
+            {
+                Debug.LogError("path is Null , return null!");
+                return null;
+            }
+
+            uint crc = Crc32.GetCrc32(path);
+            if (!TryBeginModuleOperation(crc, nameof(LoadResource), out string operationModule))
+                return null;
+            try
+            {
+                T asset = LoadResourceInternal<T>(path);
+                return CreateAssetHandle(crc, asset, path);
+            }
+            finally
+            {
+                EndModuleOperation(operationModule);
+            }
+        }
+
+        private T LoadResourceInternal<T>(string path) where T : UnityEngine.Object
         {
             if (string.IsNullOrEmpty(path))
             {
@@ -878,6 +1093,11 @@ namespace ZM.ZMAsset
             if (item.obj != null)
             {
                 return item.obj as T;
+            }
+            if (HasAssetLoadConsumer(crc))
+            {
+                Debug.LogError($"资源正在异步加载，已拒绝同 CRC 的同步重复加载。Path:{path}");
+                return null;
             }
 
             //声明新对象
@@ -912,7 +1132,14 @@ namespace ZM.ZMAsset
 
             item.obj = obj;
             item.path = path;
-            if (obj != null) TrackLoadedAsset(crc, item, path);
+            if (obj != null)
+            {
+                TrackLoadedAsset(crc, item, path);
+            }
+            else if (item.assetBundle != null)
+            {
+                AssetBundleManager.Instance.ReleaseAssets(item, true);
+            }
             
             return obj;
             }
@@ -923,12 +1150,12 @@ namespace ZM.ZMAsset
         }
 
         /// <summary>
-        /// 同步加载所有资源，外部直接调用，仅仅加载不需要实例化的资源
+        /// 同步加载指定文件中的全部资源，仅供 TexturePacker 图集内部使用。
         /// </summary>
         /// <typeparam name="T"></typeparam>
         /// <param name="path"></param>
         /// <returns></returns>
-        public T[] LoadAllResource<T>(string path) where T : UnityEngine.Object
+        private T[] LoadAllResourceInternal<T>(string path) where T : UnityEngine.Object
         {
 
             if (string.IsNullOrEmpty(path))
@@ -937,7 +1164,7 @@ namespace ZM.ZMAsset
                 return null;
             }
             uint crc = Crc32.GetCrc32(path);
-            if (!TryBeginModuleOperation(crc, nameof(LoadAllResource), out string operationModule)) return null;
+            if (!TryBeginModuleOperation(crc, nameof(LoadAllResourceInternal), out string operationModule)) return null;
             try
             {
             //从缓存中获取我们Bundleitem
@@ -947,6 +1174,11 @@ namespace ZM.ZMAsset
             if (item.objArr != null)
             {
                 return item.objArr as T[];
+            }
+            if (HasAssetLoadConsumer(crc))
+            {
+                Debug.LogError($"资源正在异步加载，已拒绝同 CRC 的同步批量加载。Path:{path}");
+                return null;
             }
 
             //声明新对象
@@ -981,9 +1213,17 @@ namespace ZM.ZMAsset
 
             item.objArr = objArr;
             item.path = path;
-            if (objArr != null) TrackLoadedAsset(crc, item, path);
+            if (objArr != null)
+            {
+                TrackLoadedAsset(crc, item, path);
+            }
+            else if (item.assetBundle != null)
+            {
+                AssetBundleManager.Instance.ReleaseAssets(item, true);
+            }
 
-            return objArr as T[];
+            T[] loadedAssets = objArr as T[];
+            return loadedAssets;
             }
             finally
             {
@@ -991,90 +1231,126 @@ namespace ZM.ZMAsset
             }
         }
         /// <summary>
-        /// 异步加载资源，外部直接调用，仅仅加载不需要实例化的资源
+        /// 异步加载指定文件中的全部资源，仅供 TexturePacker 图集内部使用。
         /// </summary>
-        /// <typeparam name="T"></typeparam>
-        /// <param name="path"></param>
-        /// <returns></returns>
-        public async void LoadResourceAsync<T>(string path, System.Action<UnityEngine.Object> loadFinish) where T : UnityEngine.Object
+        /// <param name="path">参与 CRC 查询的项目相对资源路径。</param>
+        /// <param name="isEncrypt">是否强制使用加密加载。</param>
+        /// <returns>文件包含的全部 Unity 资源；加载失败时返回 null。</returns>
+        private async UniTask<UnityEngine.Object[]> LoadAllResourceAsyncInternal(
+            string path,
+            bool isEncrypt = false)
         {
             if (string.IsNullOrEmpty(path))
             {
                 Debug.LogError("path is Null , return null!");
-                loadFinish?.Invoke(null);
-                return;
+                return null;
             }
+
             uint crc = Crc32.GetCrc32(path);
-            if (!TryBeginModuleOperation(crc, nameof(LoadResourceAsync), out string operationModule))
-            {
-                loadFinish?.Invoke(null);
-                return;
-            }
+            if (!TryBeginModuleOperation(crc, nameof(LoadAllResourceAsyncInternal), out string operationModule))
+                return null;
             try
             {
                 BundleItem item = GetCacheItemFormAssetDic(crc);
-                if (item.obj != null)
-                {
-                    loadFinish?.Invoke(item.obj as T);
-                    return;
-                }
+                if (item.objArr != null)
+                    return item.objArr;
 
-                T obj = null;
+                UnityEngine.Object[] loadedAssets = null;
 #if UNITY_EDITOR
                 if (BundleSettings.Instance.loadAssetType == LoadAssetEnum.Editor)
-                    obj = LoadAssetsFormEditor<T>(path);
+                    loadedAssets = UnityEditor.AssetDatabase.LoadAllAssetsAtPath(path);
 #endif
-                if (obj != null)
+                if (loadedAssets == null)
                 {
-                    item.obj = obj;
+                    item = await AssetBundleManager.Instance.LoadAssetBundleAsync(crc, isEncrypt);
+                    if (item == null)
+                        return null;
+                    if (item.objArr != null)
+                        return item.objArr;
+                    if (item.assetBundle == null)
+                    {
+                        Debug.LogError($"AssetBundle is null while loading atlas assets. Path:{path}");
+                        return null;
+                    }
+
+                    item.path = path;
+                    item.crc = crc;
                     TrackLoadedAsset(crc, item, path);
-                    loadFinish?.Invoke(obj);
-                    return;
+                    AssetBundleRequest request = item.assetBundle.LoadAllAssetsAsync<UnityEngine.Object>();
+                    await request;
+                    loadedAssets = request.allAssets;
                 }
 
-                item = await AssetBundleManager.Instance.LoadAssetBundleAsync(crc);
-                if (item == null)
-                {
-                    Debug.LogError("item is null ...Path:" + path);
-                    loadFinish?.Invoke(null);
-                    return;
-                }
-                if (item.obj != null)
-                {
-                    TrackLoadedAsset(crc, item, path);
-                    loadFinish?.Invoke(item.obj);
-                    return;
-                }
-                if (item.assetBundle == null)
-                {
-                    Debug.LogError("item.AssetBundle Is Null! Path:" + path);
-                    loadFinish?.Invoke(null);
-                    return;
-                }
-
-                T loadObj = await item.assetBundle.LoadAssetAsync<T>(item.assetName) as T;
-                item.obj = loadObj;
-                if (loadObj != null) TrackLoadedAsset(crc, item, path);
-                loadFinish?.Invoke(loadObj);
-            }
-            catch (Exception exception)
-            {
-                Debug.LogError($"异步加载资源失败：{path} Exception:{exception}");
-                loadFinish?.Invoke(null);
+                item.objArr = loadedAssets;
+                item.path = path;
+                item.crc = crc;
+                TrackLoadedAsset(crc, item, path);
+                if (loadedAssets == null)
+                    RequestDeferredAssetRollback(crc);
+                return loadedAssets;
             }
             finally
             {
                 EndModuleOperation(operationModule);
             }
         }
+
         /// <summary>
         /// 按需下载并异步加载不需要实例化的远端资源。
         /// </summary>
         /// <typeparam name="T">期望加载的 Unity 资源类型。</typeparam>
         /// <param name="path">参与 CRC 查询的项目相对资源路径。</param>
         /// <param name="moduleName">资源物理归属模块。</param>
-        /// <returns>加载成功的资源；校验、下载或类型转换失败时返回 null。</returns>
-        public async UniTask<T> LoadRemoteAsync<T>(string path,string moduleName, Action<float> onProgress = null) where T : UnityEngine.Object
+        /// <param name="onProgress">下载与加载进度回调。</param>
+        /// <param name="cancellationToken">取消只中止本次消费者请求；共享下载完成后会自动回滚本次未交付的资源所有权。</param>
+        /// <returns>加载成功的资源句柄；校验、下载或类型转换失败时返回 null。</returns>
+        public async UniTask<AssetHandle<T>> LoadRemoteAsync<T>(
+            string path,
+            string moduleName,
+            Action<float> onProgress = null,
+            CancellationToken cancellationToken = default) where T : UnityEngine.Object
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            if (string.IsNullOrEmpty(path))
+            {
+                Debug.LogError("path is Null , return null!");
+                return null;
+            }
+
+            uint crc = Crc32.GetCrc32(path);
+            if (!TryBeginModuleOperation(crc, nameof(LoadRemoteAsync), out string operationModule, moduleName))
+                return null;
+            bool wasAlreadyCached = mAlreayLoadAssetsDic.ContainsKey(crc);
+            bool ownershipDelivered = false;
+            BeginAssetLoadConsumer(crc);
+            try
+            {
+                T asset = await LoadRemoteAsyncInternal<T>(path, moduleName, onProgress);
+                if (cancellationToken.IsCancellationRequested)
+                {
+                    if (!wasAlreadyCached)
+                        RequestDeferredAssetRollback(crc);
+                    cancellationToken.ThrowIfCancellationRequested();
+                }
+                if (asset == null && !wasAlreadyCached)
+                    RequestDeferredAssetRollback(crc);
+                AssetHandle<T> handle = CreateAssetHandle(crc, asset, path);
+                ownershipDelivered = handle != null;
+                return handle;
+            }
+            finally
+            {
+                if (!ownershipDelivered)
+                    RequestDeferredAssetRollback(crc);
+                EndAssetLoadConsumer(crc, true);
+                EndModuleOperation(operationModule);
+            }
+        }
+
+        private async UniTask<T> LoadRemoteAsyncInternal<T>(
+            string path,
+            string moduleName,
+            Action<float> onProgress) where T : UnityEngine.Object
         {
 
             if (string.IsNullOrEmpty(path))
@@ -1136,12 +1412,23 @@ namespace ZM.ZMAsset
                     TrackLoadedAsset(crc, item, path);
                     return item.obj as T;
                 }
-                //通过异步方式加载AssetBudnle
-                T loadObj = await item.assetBundle.LoadAssetAsync<T>(item.assetName) as T;
-                item.obj = loadObj;
+                if (item.assetBundle == null)
+                {
+                    Debug.LogError($"AssetBundle is null while loading remote asset. Path:{path}");
+                    return null;
+                }
                 item.path = path;
                 item.crc = crc;
-                if (loadObj != null) TrackLoadedAsset(crc, item, path);
+                TrackLoadedAsset(crc, item, path);
+                //通过异步方式加载AssetBudnle
+                T loadObj = await item.assetBundle.LoadAssetAsync<T>(item.assetName) as T;
+                item.path = path;
+                item.crc = crc;
+                if (loadObj != null)
+                    item.obj = loadObj;
+                TrackLoadedAsset(crc, item, path);
+                if (loadObj == null)
+                    RequestDeferredAssetRollback(crc);
                 return loadObj;
             }
             return null;
@@ -1152,9 +1439,11 @@ namespace ZM.ZMAsset
             }
         }
 
-        public async UniTask<T> LoadResourceAsync<T>(string path) where T : UnityEngine.Object
+        public async UniTask<AssetHandle<T>> LoadResourceAsync<T>(
+            string path,
+            CancellationToken cancellationToken = default) where T : UnityEngine.Object
         {
-            return await LoadResourceAsync<T>(path,false);
+            return await LoadResourceHandleAsync<T>(path, false, cancellationToken);
         }
         /// <summary>
         /// 异步加载加密资源
@@ -1162,7 +1451,59 @@ namespace ZM.ZMAsset
         /// <param name="path"></param>
         /// <typeparam name="T"></typeparam>
         /// <returns></returns>
-        public async UniTask<T> LoadResourceAsync<T>(string path,bool isEncrypt=false) where T : Object
+        public async UniTask<AssetHandle<T>> LoadResourceAsync<T>(
+            string path,
+            bool isEncrypt,
+            CancellationToken cancellationToken = default) where T : Object
+        {
+            return await LoadResourceHandleAsync<T>(path, isEncrypt, cancellationToken);
+        }
+
+        private async UniTask<AssetHandle<T>> LoadResourceHandleAsync<T>(
+            string path,
+            bool isEncrypt,
+            CancellationToken cancellationToken) where T : Object
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            if (string.IsNullOrEmpty(path))
+            {
+                Debug.LogError("path is Null , return null!");
+                return null;
+            }
+
+            uint crc = Crc32.GetCrc32(path);
+            if (!TryBeginModuleOperation(crc, nameof(LoadResourceAsync), out string operationModule))
+                return null;
+            bool wasAlreadyCached = mAlreayLoadAssetsDic.ContainsKey(crc);
+            bool ownershipDelivered = false;
+            BeginAssetLoadConsumer(crc);
+            try
+            {
+                T asset = await LoadResourceAsyncInternal<T>(path, isEncrypt);
+                if (cancellationToken.IsCancellationRequested)
+                {
+                    if (!wasAlreadyCached)
+                        RequestDeferredAssetRollback(crc);
+                    cancellationToken.ThrowIfCancellationRequested();
+                }
+                if (asset == null && !wasAlreadyCached)
+                    RequestDeferredAssetRollback(crc);
+                AssetHandle<T> handle = CreateAssetHandle(crc, asset, path);
+                ownershipDelivered = handle != null;
+                return handle;
+            }
+            finally
+            {
+                if (!ownershipDelivered)
+                    RequestDeferredAssetRollback(crc);
+                EndAssetLoadConsumer(crc, true);
+                EndModuleOperation(operationModule);
+            }
+        }
+
+        private async UniTask<T> LoadResourceAsyncInternal<T>(
+            string path,
+            bool isEncrypt) where T : Object
         {
             if (string.IsNullOrEmpty(path))
             {
@@ -1217,12 +1558,23 @@ namespace ZM.ZMAsset
                     TrackLoadedAsset(crc, item, path);
                     return item.obj as T;
                 }
-                //通过异步方式加载AssetBudnle
-                T loadObj = await item.assetBundle.LoadAssetAsync<T>(item.assetName) as T;
-                item.obj = loadObj;
+                if (item.assetBundle == null)
+                {
+                    Debug.LogError($"AssetBundle is null while loading asset. Path:{path}");
+                    return null;
+                }
                 item.path = path;
                 item.crc = crc;
-                if (loadObj != null) TrackLoadedAsset(crc, item, path);
+                TrackLoadedAsset(crc, item, path);
+                //通过异步方式加载AssetBudnle
+                T loadObj = await item.assetBundle.LoadAssetAsync<T>(item.assetName) as T;
+                item.path = path;
+                item.crc = crc;
+                if (loadObj != null)
+                    item.obj = loadObj;
+                TrackLoadedAsset(crc, item, path);
+                if (loadObj == null)
+                    RequestDeferredAssetRollback(crc);
                 return loadObj;
             }
             return null;
@@ -1276,10 +1628,19 @@ namespace ZM.ZMAsset
 
         private bool EvictLoadedAsset(uint crc, bool unloadLoadedObjects)
         {
+            return EvictLoadedAssetCore(crc, unloadLoadedObjects, out _);
+        }
+
+        private bool EvictLoadedAssetCore(uint crc, bool unloadLoadedObjects, out bool removedAtlasCache)
+        {
+            removedAtlasCache = false;
             if (!mAlreayLoadAssetsDic.TryGetValue(crc, out BundleItem item)) return false;
 
             //00 先移除主缓存所有权再释放底层 Bundle，使重入查询不会观察到正在卸载的缓存项。
             mAlreayLoadAssetsDic.Remove(crc);
+            InvalidateAssetHandles(crc);
+            // TexturePacker additionally retains an Object[]; it must share the main cache eviction boundary.
+            removedAtlasCache = RemoveAtlasCache(item.path, item.bundleModuleType);
             if (!string.IsNullOrWhiteSpace(item.bundleModuleType) &&
                 mModuleResourceStateDic.TryGetValue(item.bundleModuleType, out ModuleResourceState moduleState))
                 moduleState.loadedAssetCrcs.Remove(crc);
@@ -1287,6 +1648,180 @@ namespace ZM.ZMAsset
             AssetBundleManager.Instance.ReleaseAssets(item, unloadLoadedObjects);
             AssertLoadedAssetInvariant(crc, item, "EvictLoadedAsset");
             return true;
+        }
+
+        private bool TryEvictLoadedAssetIfUnused(uint crc, bool unloadLoadedObjects)
+        {
+            if (HasTrackedObject(crc) || HasActiveAssetHandle(crc))
+                return false;
+            if (HasAssetLoadConsumer(crc))
+            {
+                RequestDeferredAssetRollback(crc);
+                return false;
+            }
+            return EvictLoadedAsset(crc, unloadLoadedObjects);
+        }
+
+        private void BeginAssetLoadConsumer(uint crc)
+        {
+            mAssetLoadConsumerCountByCrc.TryGetValue(crc, out int count);
+            mAssetLoadConsumerCountByCrc[crc] = count + 1;
+        }
+
+        private void RequestDeferredAssetRollback(uint crc)
+        {
+            mDeferredAssetRollbackCrcs.Add(crc);
+        }
+
+        private void EndAssetLoadConsumer(uint crc, bool unloadLoadedObjects)
+        {
+            if (!mAssetLoadConsumerCountByCrc.TryGetValue(crc, out int count))
+                return;
+
+            if (count > 1)
+            {
+                mAssetLoadConsumerCountByCrc[crc] = count - 1;
+                return;
+            }
+
+            mAssetLoadConsumerCountByCrc.Remove(crc);
+            if (!mDeferredAssetRollbackCrcs.Remove(crc))
+                return;
+
+            TryEvictLoadedAssetIfUnused(crc, unloadLoadedObjects);
+        }
+
+        private bool HasAssetLoadConsumer(uint crc)
+        {
+            return mAssetLoadConsumerCountByCrc.TryGetValue(crc, out int count) && count > 0;
+        }
+
+        /// <summary>
+        /// 为返回给业务层的 Unity 资源创建一次独立句柄。
+        /// 实例化内部使用的 Prefab 源对象不走该入口，其生命周期由实例索引管理。
+        /// </summary>
+        private AssetHandle<T> CreateAssetHandle<T>(
+            uint crc,
+            T asset,
+            string path,
+            AssetHandleReleasePolicy releasePolicy = AssetHandleReleasePolicy.RetainUntilAssetEviction)
+            where T : UnityEngine.Object
+        {
+            if (asset == null) return null;
+
+            long handleId = GetNextAssetHandleId();
+            AssetHandleState state = new AssetHandleState(handleId);
+            string bundleModuleType = string.Empty;
+            if (mAlreayLoadAssetsDic.TryGetValue(crc, out BundleItem item) && item != null)
+                bundleModuleType = item.bundleModuleType;
+
+            AssetHandleRecord record = new AssetHandleRecord
+            {
+                handleId = handleId,
+                crc = crc,
+                path = path ?? string.Empty,
+                bundleModuleType = bundleModuleType ?? string.Empty,
+                asset = asset,
+                state = state,
+                releasePolicy = releasePolicy
+            };
+            mAssetHandleRecords.Add(handleId, record);
+            if (!mAssetHandleIdsByCrc.TryGetValue(crc, out HashSet<long> handleIds))
+            {
+                handleIds = new HashSet<long>();
+                mAssetHandleIdsByCrc.Add(crc, handleIds);
+            }
+            handleIds.Add(handleId);
+
+            return new AssetHandle<T>(this, state, asset, path);
+        }
+
+        private long GetNextAssetHandleId()
+        {
+            do
+            {
+                if (mAssetHandleGuid <= 0 || mAssetHandleGuid == long.MaxValue)
+                    mAssetHandleGuid = 1;
+                else
+                    mAssetHandleGuid++;
+            } while (mAssetHandleRecords.ContainsKey(mAssetHandleGuid));
+
+            return mAssetHandleGuid;
+        }
+
+        bool IAssetHandleOwner.IsAssetHandleMainThread =>
+            Thread.CurrentThread.ManagedThreadId == mAssetHandleMainThreadId;
+
+        bool IAssetHandleOwner.ReleaseAssetHandle(long handleId)
+        {
+            return ReleaseAssetHandle(handleId);
+        }
+
+        private bool ReleaseAssetHandle(long handleId)
+        {
+            if (!mAssetHandleRecords.TryGetValue(handleId, out AssetHandleRecord record))
+                return false;
+
+            mAssetHandleRecords.Remove(handleId);
+            if (mAssetHandleIdsByCrc.TryGetValue(record.crc, out HashSet<long> handleIds))
+            {
+                handleIds.Remove(handleId);
+                if (handleIds.Count == 0)
+                    mAssetHandleIdsByCrc.Remove(record.crc);
+            }
+
+            record.state?.Invalidate();
+            ReleaseTransientHandleAsset(record);
+            TryEvictLoadedAssetIfUnused(record.crc, true);
+            return true;
+        }
+
+        private bool HasActiveAssetHandle(uint crc)
+        {
+            return mAssetHandleIdsByCrc.TryGetValue(crc, out HashSet<long> handleIds) &&
+                   handleIds.Count > 0;
+        }
+
+        private int GetActiveAssetHandleCount(uint crc)
+        {
+            return mAssetHandleIdsByCrc.TryGetValue(crc, out HashSet<long> handleIds)
+                ? handleIds.Count
+                : 0;
+        }
+
+        private void InvalidateAssetHandles(uint crc)
+        {
+            if (!mAssetHandleIdsByCrc.TryGetValue(crc, out HashSet<long> handleIds))
+                return;
+
+            HashSet<int> destroyedTransientInstanceIds = null;
+            foreach (long handleId in new List<long>(handleIds))
+            {
+                if (!mAssetHandleRecords.TryGetValue(handleId, out AssetHandleRecord record))
+                    continue;
+
+                record.state?.Invalidate();
+                if (record.releasePolicy == AssetHandleReleasePolicy.DestroyOnHandleRelease &&
+                    record.asset != null)
+                {
+                    destroyedTransientInstanceIds ??= new HashSet<int>();
+                    if (destroyedTransientInstanceIds.Add(record.asset.GetInstanceID()))
+                        UnityEngine.Object.Destroy(record.asset);
+                }
+                record.asset = null;
+                mAssetHandleRecords.Remove(handleId);
+            }
+
+            mAssetHandleIdsByCrc.Remove(crc);
+        }
+
+        private static void ReleaseTransientHandleAsset(AssetHandleRecord record)
+        {
+            if (record == null)
+                return;
+            if (record.releasePolicy == AssetHandleReleasePolicy.DestroyOnHandleRelease && record.asset != null)
+                UnityEngine.Object.Destroy(record.asset);
+            record.asset = null;
         }
 
         private bool HasTrackedObject(uint crc)
@@ -1351,6 +1886,71 @@ namespace ZM.ZMAsset
             if (!string.IsNullOrWhiteSpace(bundleModule)) GetOrCreateModuleState(bundleModule).atlasPaths.Add(path);
         }
 
+        private bool RemoveAtlasCache(string path, string bundleModule = null)
+        {
+            if (string.IsNullOrWhiteSpace(path))
+                return false;
+
+            bool removed = mAllAssetObjectDic.Remove(path);
+            string ownerModule = string.IsNullOrWhiteSpace(bundleModule)
+                ? ResolveBundleModule(Crc32.GetCrc32(path))
+                : bundleModule;
+            if (!string.IsNullOrWhiteSpace(ownerModule) &&
+                mModuleResourceStateDic.TryGetValue(ownerModule, out ModuleResourceState state))
+            {
+                state.atlasPaths.Remove(path);
+            }
+
+            return removed;
+        }
+
+        private UnityEngine.Object[] CacheAtlasObjects(string path, UnityEngine.Object[] objects)
+        {
+            if (objects == null)
+                return null;
+            if (mAllAssetObjectDic.TryGetValue(path, out UnityEngine.Object[] cachedObjects) &&
+                cachedObjects != null)
+            {
+                return cachedObjects;
+            }
+
+            mAllAssetObjectDic[path] = objects;
+            TrackAtlas(path);
+            return objects;
+        }
+
+        private bool TryGetCachedAtlasObjects(string path, uint crc, out UnityEngine.Object[] objects)
+        {
+            if (!mAllAssetObjectDic.TryGetValue(path, out objects))
+                return false;
+            if (objects != null && mAlreayLoadAssetsDic.ContainsKey(crc))
+                return true;
+
+            RemoveAtlasCache(path);
+            objects = null;
+            return false;
+        }
+
+        private void RollbackAtlasLoad(uint crc, string path)
+        {
+            if (HasAssetLoadConsumer(crc))
+            {
+                RequestDeferredAssetRollback(crc);
+                return;
+            }
+
+            if (TryEvictLoadedAssetIfUnused(crc, true))
+                return;
+
+            // Clean up an orphaned TexturePacker cache left by an older runtime implementation.
+            if (!mAlreayLoadAssetsDic.ContainsKey(crc) &&
+                !HasActiveAssetHandle(crc) &&
+                !HasTrackedObject(crc))
+            {
+                RemoveAtlasCache(path);
+            }
+        }
+
         private void TrackAsyncTask(long taskId, uint crc)
         {
             string bundleModule = ResolveBundleModule(crc);
@@ -1410,7 +2010,7 @@ namespace ZM.ZMAsset
         }
 
 #if UNITY_EDITOR
-        public T LoadAssetsFormEditor<T>(string path) where T : UnityEngine.Object
+        private T LoadAssetsFormEditor<T>(string path) where T : UnityEngine.Object
         {
             return UnityEditor.AssetDatabase.LoadAssetAtPath<T>(path);
         }
@@ -1452,11 +2052,7 @@ namespace ZM.ZMAsset
             }
             if (destroyCache)
             {
-                uint crc = cacheObejct.crc;
-                DestroyTrackedInstance(cacheObejct);
-
-                //00 实例数量由实例字典判断；只有最后一个同 CRC 实例销毁后，才释放该资源的主缓存持有。
-                if (!HasTrackedObject(crc)) EvictLoadedAsset(crc, true);
+                DestroyTrackedHierarchy(obj);
             }
             else
             {
@@ -1494,6 +2090,46 @@ namespace ZM.ZMAsset
             }
         }
 
+        /// <summary>
+        /// 注销根对象及所有由框架独立实例化的子对象，避免 Unity 级联销毁后留下失效实例索引。
+        /// </summary>
+        private void DestroyTrackedHierarchy(GameObject rootObject)
+        {
+            if (rootObject == null) return;
+
+            Transform rootTransform = rootObject.transform;
+            List<CacheObejct> trackedHierarchy = new List<CacheObejct>();
+            HashSet<uint> affectedCrcs = new HashSet<uint>();
+            foreach (CacheObejct trackedObject in new List<CacheObejct>(mAllObjectDic.Values))
+            {
+                if (trackedObject?.obj == null) continue;
+                Transform trackedTransform = trackedObject.obj.transform;
+                if (trackedObject.obj != rootObject && !trackedTransform.IsChildOf(rootTransform)) continue;
+                trackedHierarchy.Add(trackedObject);
+                affectedCrcs.Add(trackedObject.crc);
+            }
+
+            // 子对象先注销，确保父对象的 Unity 级联销毁不会让子对象提前变成无法定位的假空引用。
+            trackedHierarchy.Sort((left, right) =>
+                GetTransformDepth(right.obj.transform).CompareTo(GetTransformDepth(left.obj.transform)));
+            foreach (CacheObejct trackedObject in trackedHierarchy)
+                DestroyTrackedInstance(trackedObject);
+
+            foreach (uint crc in affectedCrcs)
+                TryEvictLoadedAssetIfUnused(crc, true);
+        }
+
+        private static int GetTransformDepth(Transform transform)
+        {
+            int depth = 0;
+            while (transform != null)
+            {
+                depth++;
+                transform = transform.parent;
+            }
+            return depth;
+        }
+
         private bool DestroyTrackedInstance(CacheObejct cacheObject)
         {
             if (cacheObject == null) return false;
@@ -1511,19 +2147,11 @@ namespace ZM.ZMAsset
             return true;
         }
         /// <summary>
-        /// 释放图片所占用的内存
-        /// </summary>
-        /// <param name="texture"></param>
-        public void Release(Texture texture)
-        {
-            Resources.UnloadAsset(texture);
-        }
-        /// <summary>
         /// 加载图片资源
         /// </summary>
         /// <param name="path"></param>
         /// <returns></returns>
-        public Sprite LoadSprite(string path)
+        public AssetHandle<Sprite> LoadSprite(string path)
         {
             // 只有调用方未提供扩展名时才使用默认 png，避免 jpg/png 被重复拼接。
             if (string.IsNullOrEmpty(Path.GetExtension(path))) path += ".png";
@@ -1534,7 +2162,7 @@ namespace ZM.ZMAsset
         /// </summary>
         /// <param name="path"></param>
         /// <returns></returns>
-        public Texture LoadTexture(string path)
+        public AssetHandle<Texture> LoadTexture(string path)
         {
             // 只有没有扩展名时才使用默认 jpg，允许 png、jpeg、tga 等实际纹理路径直接加载。
             if (string.IsNullOrEmpty(Path.GetExtension(path))) path += ".jpg";
@@ -1545,7 +2173,7 @@ namespace ZM.ZMAsset
         /// </summary>
         /// <param name="path"></param>
         /// <returns></returns>
-        public AudioClip LoadAudio(string path)
+        public AssetHandle<AudioClip> LoadAudio(string path)
         {
             return LoadResource<AudioClip>(path);
         }
@@ -1554,7 +2182,7 @@ namespace ZM.ZMAsset
         /// </summary>
         /// <param name="path"></param>
         /// <returns></returns>
-        public TextAsset LoadTextAsset(string path)
+        public AssetHandle<TextAsset> LoadTextAsset(string path)
         {
             return LoadResource<TextAsset>(path);
         }
@@ -1564,18 +2192,91 @@ namespace ZM.ZMAsset
         /// <param name="atlasPath"></param>
         /// <param name="spriteName"></param>
         /// <returns></returns>
-        public Sprite LoadAtlasSprite(string atlasPath, string spriteName)
+        public AssetHandle<Sprite> LoadAtlasSprite(string atlasPath, string spriteName)
         {
-            if (atlasPath.EndsWith(".spriteatlas") == false) atlasPath += ".spriteatlas";
-            return LoadSpriteFormAltas(LoadResource<SpriteAtlas>(atlasPath), spriteName);
+            if (!ValidateAtlasRequest(atlasPath, spriteName, nameof(LoadAtlasSprite)))
+                return null;
+
+            atlasPath = EnsureAtlasExtension(atlasPath, ".spriteatlas");
+            uint crc = Crc32.GetCrc32(atlasPath);
+            if (!TryBeginModuleOperation(crc, nameof(LoadAtlasSprite), out string operationModule))
+                return null;
+            try
+            {
+                SpriteAtlas atlas = LoadResourceInternal<SpriteAtlas>(atlasPath);
+                Sprite sprite = FindSpriteInAtlas(atlas, spriteName);
+                if (sprite == null)
+                {
+                    RollbackAtlasLoad(crc, atlasPath);
+                    return null;
+                }
+
+                return CreateAssetHandle(crc, sprite, atlasPath, AssetHandleReleasePolicy.DestroyOnHandleRelease);
+            }
+            finally
+            {
+                EndModuleOperation(operationModule);
+            }
         }
         /// <summary>
-        /// 从图集中加载指定名称的图片
+        /// 异步加载 Unity SpriteAtlas 中指定名称的 Sprite。
         /// </summary>
-        /// <param name="spriteAtlas"></param>
-        /// <param name="name"></param>
-        /// <returns></returns>
-        private Sprite LoadSpriteFormAltas(SpriteAtlas spriteAtlas, string name)
+        /// <param name="atlasPath">图集资源路径。</param>
+        /// <param name="spriteName">Sprite 名称。</param>
+        /// <param name="cancellationToken">取消当前调用；不会取消其他调用方共享的底层加载。</param>
+        /// <returns>独立资源句柄；加载或查找失败时返回 null。</returns>
+        public async UniTask<AssetHandle<Sprite>> LoadAtlasSpriteAsync(
+            string atlasPath,
+            string spriteName,
+            CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            if (!ValidateAtlasRequest(atlasPath, spriteName, nameof(LoadAtlasSpriteAsync)))
+                return null;
+
+            atlasPath = EnsureAtlasExtension(atlasPath, ".spriteatlas");
+            uint crc = Crc32.GetCrc32(atlasPath);
+            if (!TryBeginModuleOperation(crc, nameof(LoadAtlasSpriteAsync), out string operationModule))
+                return null;
+
+            bool wasAlreadyCached = mAlreayLoadAssetsDic.ContainsKey(crc);
+            bool ownershipDelivered = false;
+            BeginAssetLoadConsumer(crc);
+            try
+            {
+                SpriteAtlas atlas = await LoadResourceAsyncInternal<SpriteAtlas>(atlasPath, false);
+                if (cancellationToken.IsCancellationRequested)
+                {
+                    if (!wasAlreadyCached)
+                        RollbackAtlasLoad(crc, atlasPath);
+                    cancellationToken.ThrowIfCancellationRequested();
+                }
+
+                Sprite sprite = FindSpriteInAtlas(atlas, spriteName);
+                if (sprite == null)
+                {
+                    RollbackAtlasLoad(crc, atlasPath);
+                    return null;
+                }
+
+                AssetHandle<Sprite> handle = CreateAssetHandle(
+                    crc,
+                    sprite,
+                    atlasPath,
+                    AssetHandleReleasePolicy.DestroyOnHandleRelease);
+                ownershipDelivered = handle != null;
+                return handle;
+            }
+            finally
+            {
+                if (!ownershipDelivered)
+                    RequestDeferredAssetRollback(crc);
+                EndAssetLoadConsumer(crc, true);
+                EndModuleOperation(operationModule);
+            }
+        }
+
+        private Sprite FindSpriteInAtlas(SpriteAtlas spriteAtlas, string name)
         {
             if (spriteAtlas == null)
             {
@@ -1598,123 +2299,159 @@ namespace ZM.ZMAsset
         /// 加载tpsheet图集
         /// </summary>
         /// <param name="path"></param>
-        public Sprite LoadPNGAtlasSprite(string path, string name)
+        public AssetHandle<Sprite> LoadPNGAtlasSprite(string path, string name)
         {
-            if (string.IsNullOrEmpty(path))
-            {
+            if (!ValidateAtlasRequest(path, name, nameof(LoadPNGAtlasSprite)))
                 return null;
-            }
-            if (!path.EndsWith(".png"))
+
+            path = EnsureAtlasExtension(path, ".png");
+            uint crc = Crc32.GetCrc32(path);
+            if (!TryBeginModuleOperation(crc, nameof(LoadPNGAtlasSprite), out string operationModule))
+                return null;
+            try
             {
-                path += ".png";
+                // The auxiliary array is valid only while its primary BundleItem remains cached.
+                if (TryGetCachedAtlasObjects(path, crc, out UnityEngine.Object[] objectArr))
+                {
+                    Sprite cachedSprite = FindSpriteInAtlas(objectArr, name);
+                    if (cachedSprite != null)
+                        return CreateAssetHandle(crc, cachedSprite, path);
+
+                    RollbackAtlasLoad(crc, path);
+                    return null;
+                }
+
+                UnityEngine.Object[] objects = LoadAllResourceInternal<UnityEngine.Object>(path);
+                if (objects == null) return null;
+
+                objects = CacheAtlasObjects(path, objects);
+                Sprite sprite = FindSpriteInAtlas(objects, name);
+                if (sprite == null)
+                {
+                    RollbackAtlasLoad(crc, path);
+                    return null;
+                }
+
+                return CreateAssetHandle(crc, sprite, path);
             }
-            UnityEngine.Object[] objectArr = null;
-            //优先从缓存中读取
-            if (mAllAssetObjectDic.TryGetValue(path, out objectArr) && objectArr != null)
+            finally
             {
-                return LoadSpriteFormAltas(objectArr, name);
+                EndModuleOperation(operationModule);
             }
-            //通过Asset Bundle加载该文件中的所有资源
-            UnityEngine.Object[] objects = LoadAllResource<UnityEngine.Object>(path);
-            if (objects == null) return null;
-            //缓存至图集列表中
-            mAllAssetObjectDic.Add(path, objects);
-            TrackAtlas(path);
-            return LoadSpriteFormAltas(objects, name);
         }
         /// <summary>
-        /// 从图集中加载图片
+        /// 异步加载 TexturePacker 图集中的指定 Sprite。
         /// </summary>
-        /// <param name="objects"></param>
-        /// <param name="name"></param>
-        /// <returns></returns>
-        private Sprite LoadSpriteFormAltas(UnityEngine.Object[] objects, string name)
+        /// <param name="path">PNG 图集路径。</param>
+        /// <param name="name">Sprite 名称。</param>
+        /// <param name="cancellationToken">取消当前调用；不会取消其他调用方共享的底层加载。</param>
+        /// <returns>独立资源句柄；加载或查找失败时返回 null。</returns>
+        public async UniTask<AssetHandle<Sprite>> LoadPNGAtlasSpriteAsync(
+            string path,
+            string name,
+            CancellationToken cancellationToken = default)
         {
+            cancellationToken.ThrowIfCancellationRequested();
+            if (!ValidateAtlasRequest(path, name, nameof(LoadPNGAtlasSpriteAsync)))
+                return null;
+
+            path = EnsureAtlasExtension(path, ".png");
+            uint crc = Crc32.GetCrc32(path);
+            if (!TryBeginModuleOperation(crc, nameof(LoadPNGAtlasSpriteAsync), out string operationModule))
+                return null;
+
+            bool wasAlreadyCached = mAlreayLoadAssetsDic.ContainsKey(crc);
+            bool ownershipDelivered = false;
+            BeginAssetLoadConsumer(crc);
+            try
+            {
+                if (TryGetCachedAtlasObjects(path, crc, out UnityEngine.Object[] cachedObjects))
+                {
+                    Sprite cachedSprite = FindSpriteInAtlas(cachedObjects, name);
+                    if (cachedSprite != null)
+                    {
+                        AssetHandle<Sprite> cachedHandle = CreateAssetHandle(crc, cachedSprite, path);
+                        ownershipDelivered = cachedHandle != null;
+                        return cachedHandle;
+                    }
+
+                    RollbackAtlasLoad(crc, path);
+                    return null;
+                }
+
+                UnityEngine.Object[] objects = await LoadAllResourceAsyncInternal(path);
+                if (cancellationToken.IsCancellationRequested)
+                {
+                    if (!wasAlreadyCached)
+                        RollbackAtlasLoad(crc, path);
+                    cancellationToken.ThrowIfCancellationRequested();
+                }
+                if (objects == null)
+                {
+                    if (!wasAlreadyCached)
+                        RollbackAtlasLoad(crc, path);
+                    return null;
+                }
+
+                objects = CacheAtlasObjects(path, objects);
+                Sprite sprite = FindSpriteInAtlas(objects, name);
+                if (sprite == null)
+                {
+                    RollbackAtlasLoad(crc, path);
+                    return null;
+                }
+
+                AssetHandle<Sprite> handle = CreateAssetHandle(crc, sprite, path);
+                ownershipDelivered = handle != null;
+                return handle;
+            }
+            finally
+            {
+                if (!ownershipDelivered)
+                    RequestDeferredAssetRollback(crc);
+                EndAssetLoadConsumer(crc, true);
+                EndModuleOperation(operationModule);
+            }
+        }
+
+        private Sprite FindSpriteInAtlas(UnityEngine.Object[] objects, string name)
+        {
+            if (objects == null)
+                return null;
+
             for (int i = 0; i < objects.Length; i++)
             {
-                if (string.Equals(name, objects[i].name))
-                {
-                    return objects[i] as Sprite;
-                }
+                if (objects[i] is Sprite sprite &&
+                    sprite != null &&
+                    string.Equals(name, sprite.name, StringComparison.Ordinal))
+                    return sprite;
             }
+
             Debug.LogError("没有找到名字为" + name + "的图片 请检查图片名称是否正确！");
             return null;
         }
 
-
-
-        /// <summary>
-        /// 异步加载图片
-        /// </summary>
-        /// <param name="path">路径</param>
-        /// <param name="loadAsync">异步加载回调</param>
-        /// <param name="param1">参数1</param>
-        /// <returns></returns>
-        public long LoadTextureAsync(string path, Action<Texture, object> loadAsync, object param1 = null)
+        private static string EnsureAtlasExtension(string path, string extension)
         {
-            if (path.EndsWith(".jpg") == false) path += ".jpg";
-
-            long guid = mAsyncTaskGuid;
-            RegisterAsyncTask(guid, Crc32.GetCrc32(path));
-            LoadResourceAsync<Texture>(path, (obj) =>
-            {
-
-                if (obj != null)
-                {
-                    if (mAsyncLoadingTaskList.Contains(guid))
-                    {
-                        CompleteAsyncTask(guid);
-                        loadAsync?.Invoke(obj as Texture, param1);
-                    }
-                }
-                else
-                {
-                    CompleteAsyncTask(guid);
-                    Debug.LogError("Async Load texture is Null,Path:" + path);
-                }
-            });
-            return guid;
+            return path.EndsWith(extension, StringComparison.OrdinalIgnoreCase)
+                ? path
+                : path + extension;
         }
-        /// <summary>
-        /// 异步加载Sprite
-        /// </summary>
-        /// <param name="path">加载路径</param>
-        /// <param name="image">Inage组件</param>
-        /// <param name="setNativeSize">是否设置未美术图的原始尺寸</param>
-        /// <param name="loadAsync">加载完成的回调</param>
-        /// <returns></returns>
-        public long LoadSpriteAsync(string path, Image image, bool setNativeSize = false, Action<Sprite> loadAsync = null)
-        {
-            if (path.EndsWith(".png") == false) path += ".png";
 
-            long guid = mAsyncTaskGuid;
-            RegisterAsyncTask(guid, Crc32.GetCrc32(path));
-            LoadResourceAsync<Sprite>(path, (obj) =>
+        private static bool ValidateAtlasRequest(string path, string spriteName, string operation)
+        {
+            if (string.IsNullOrWhiteSpace(path))
             {
-                if (obj != null)
-                {
-                    if (mAsyncLoadingTaskList.Contains(guid))
-                    {
-                        Sprite sprite = obj as Sprite;
-                        if (image != null)
-                        {
-                            image.sprite = sprite;
-                            if (setNativeSize)
-                            {
-                                image.SetNativeSize();
-                            }
-                        }
-                        CompleteAsyncTask(guid);
-                        loadAsync?.Invoke(sprite);
-                    }
-                }
-                else
-                {
-                    CompleteAsyncTask(guid);
-                    Debug.LogError("Async Load Sprite is Null,Path:" + path);
-                }
-            });
-            return guid;
+                Debug.LogError($"Atlas path is empty. Operation:{operation}");
+                return false;
+            }
+            if (string.IsNullOrWhiteSpace(spriteName))
+            {
+                Debug.LogError($"Sprite name is empty. Operation:{operation}, Path:{path}");
+                return false;
+            }
+
+            return true;
         }
         /// <summary>
         /// 清理所有异步加载任务
@@ -1761,8 +2498,11 @@ namespace ZM.ZMAsset
             List<uint> loadedAssetCrcList = new List<uint>(mAlreayLoadAssetsDic.Keys);
             foreach (uint crc in loadedAssetCrcList)
             {
-                //00 浅清理保留仍有活动实例的资源；深度清理已销毁全部实例，可以释放所有主缓存项。
-                if (absoluteCleaning || !HasTrackedObject(crc))
+                // 浅清理同时保留活动实例和活动资源句柄；深度清理会使句柄失效并显式强制回收。
+                if (absoluteCleaning ||
+                    (!HasTrackedObject(crc) &&
+                     !HasActiveAssetHandle(crc) &&
+                     !HasAssetLoadConsumer(crc)))
                     EvictLoadedAsset(crc, absoluteCleaning);
             }
 
@@ -1787,8 +2527,8 @@ namespace ZM.ZMAsset
         /// 清理指定资源模块中由框架跟踪的缓存和对象。
         /// </summary>
         /// <remarks>
-        /// ForceTrackedObjects 只能销毁框架已跟踪的 GameObject 和缓存，无法发现业务代码仍持有的
-        /// Texture、Sprite、AudioClip、TextAsset 等裸引用；调用方必须保证强制清理后不再访问这些资源。
+        /// PooledOnly 会在存在活动 GameObject 或 AssetHandle 时拒绝清理且不修改模块状态；
+        /// ForceTrackedObjects 会销毁实例并使模块内的活动 AssetHandle 失效。
         /// </remarks>
         public async UniTask<ModuleClearResult> ClearModuleAssetsAsync(
             string bundleModule,
@@ -1832,6 +2572,9 @@ namespace ZM.ZMAsset
                 List<int> instanceIds = state == null
                     ? new List<int>()
                     : new List<int>(state.objectInstanceIds);
+                List<uint> loadedAssetCrcs = state == null
+                    ? new List<uint>()
+                    : new List<uint>(state.loadedAssetCrcs);
                 if (mode == ModuleClearMode.PooledOnly)
                 {
                     foreach (int instanceId in instanceIds)
@@ -1844,6 +2587,17 @@ namespace ZM.ZMAsset
                             return result;
                         }
                     }
+
+                    int activeAssetHandleCount = 0;
+                    foreach (uint crc in loadedAssetCrcs)
+                        activeAssetHandleCount += GetActiveAssetHandleCount(crc);
+                    if (activeAssetHandleCount > 0)
+                    {
+                        result.status = ModuleClearStatus.InUse;
+                        result.message =
+                            $"资源模块仍有 {activeAssetHandleCount} 个活动 AssetHandle，未执行任何清理：{bundleModule}";
+                        return result;
+                    }
                 }
 
                 foreach (int instanceId in instanceIds)
@@ -1853,20 +2607,22 @@ namespace ZM.ZMAsset
                     if (DestroyTrackedInstance(cacheObject)) result.destroyedObjectCount++;
                 }
 
-                List<uint> loadedAssetCrcs = state == null
-                    ? new List<uint>()
-                    : new List<uint>(state.loadedAssetCrcs);
                 foreach (uint crc in loadedAssetCrcs)
                 {
-                    if (EvictLoadedAsset(crc, mode == ModuleClearMode.ForceTrackedObjects))
+                    if (EvictLoadedAssetCore(
+                            crc,
+                            mode == ModuleClearMode.ForceTrackedObjects,
+                            out bool removedAtlasCache))
                         result.releasedAssetCount++;
+                    if (removedAtlasCache)
+                        result.releasedAtlasCount++;
                 }
 
                 if (state != null)
                 {
                     foreach (string atlasPath in new List<string>(state.atlasPaths))
                     {
-                        if (mAllAssetObjectDic.Remove(atlasPath)) result.releasedAtlasCount++;
+                        if (RemoveAtlasCache(atlasPath, bundleModule)) result.releasedAtlasCount++;
                     }
                     foreach (long taskId in new List<long>(state.asyncTaskIds))
                     {
@@ -1952,7 +2708,11 @@ namespace ZM.ZMAsset
 
         public void Release(AssetsRequest request)
         {
-            mAssetsRequestPool.Recycl(request);
+            if (request == null || !request.TryBeginRelease(out GameObject instance))
+                return;
+
+            if (instance != null)
+                Release(instance);
         }
         /// <summary>
         /// 初始化资源模块

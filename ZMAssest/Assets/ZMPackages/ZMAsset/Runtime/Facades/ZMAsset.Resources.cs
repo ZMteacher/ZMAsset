@@ -1,4 +1,5 @@
 using System;
+using System.Threading;
 using Cysharp.Threading.Tasks;
 using UnityEngine;
 using UnityEngine.SceneManagement;
@@ -63,10 +64,13 @@ namespace ZM.ZMAsset
             /// <summary>
             /// 异步加载指定类型的资源；路径可以包含扩展名，也可以使用框架配置的默认扩展名。
             /// </summary>
-            public static UniTask<T> LoadAsync<T>(string path) where T : UnityEngine.Object
+            /// <remarks>每次成功加载都会返回独立 AssetHandle；不再使用时必须 Dispose。</remarks>
+            public static UniTask<AssetHandle<T>> LoadAsync<T>(
+                string path,
+                CancellationToken cancellationToken = default) where T : UnityEngine.Object
             {
                 ValidateAssetPath(path);
-                return InitializedInstance.mResource.LoadResourceAsync<T>(path);
+                return InitializedInstance.mResource.LoadResourceAsync<T>(path, cancellationToken);
             }
 
             /// <summary>
@@ -82,7 +86,8 @@ namespace ZM.ZMAsset
             /// <summary>
             /// 同步加载 TextAsset。
             /// </summary>
-            public static TextAsset LoadTextAsset(string path)
+            /// <remarks>每次成功加载都会返回独立 AssetHandle；不再使用时必须 Dispose。</remarks>
+            public static AssetHandle<TextAsset> LoadTextAsset(string path)
             {
                 ValidateAssetPath(path);
                 return InitializedInstance.mResource.LoadTextAsset(path);
@@ -91,7 +96,8 @@ namespace ZM.ZMAsset
             /// <summary>
             /// 同步加载 ScriptableObject 或其他 UnityEngine.Object 派生配置对象。
             /// </summary>
-            public static T LoadScriptableObject<T>(string path) where T : UnityEngine.Object
+            /// <remarks>每次成功加载都会返回独立 AssetHandle；不再使用时必须 Dispose。</remarks>
+            public static AssetHandle<T> LoadScriptableObject<T>(string path) where T : UnityEngine.Object
             {
                 ValidateAssetPath(path);
                 return InitializedInstance.mResource.LoadScriptableObject<T>(path);
@@ -110,25 +116,60 @@ namespace ZM.ZMAsset
             /// <summary>
             /// 从 Unity SpriteAtlas 中同步读取指定 Sprite。
             /// </summary>
-            public static Sprite LoadAtlasSprite(string atlasPath, string spriteName)
+            /// <remarks>每次成功读取都会返回独立 AssetHandle；不再使用时必须 Dispose。</remarks>
+            public static AssetHandle<Sprite> LoadAtlasSprite(string atlasPath, string spriteName)
             {
                 ValidateAtlasParameters(atlasPath, spriteName);
                 return InitializedInstance.mResource.LoadAtlasSprite(atlasPath, spriteName);
             }
 
             /// <summary>
+            /// 从 Unity SpriteAtlas 异步读取指定 Sprite；适用于 WebGL 首次加载尚未驻留的 Bundle。
+            /// </summary>
+            /// <remarks>每次成功读取都会返回独立 AssetHandle；不再使用时必须 Dispose。</remarks>
+            public static UniTask<AssetHandle<Sprite>> LoadAtlasSpriteAsync(
+                string atlasPath,
+                string spriteName,
+                CancellationToken cancellationToken = default)
+            {
+                ValidateAtlasParameters(atlasPath, spriteName);
+                return InitializedInstance.mResource.LoadAtlasSpriteAsync(
+                    atlasPath,
+                    spriteName,
+                    cancellationToken);
+            }
+
+            /// <summary>
             /// 从 TexturePacker 图集中同步读取指定 Sprite。
             /// </summary>
-            public static Sprite LoadTexturePackerSprite(string atlasPath, string spriteName)
+            /// <remarks>每次成功读取都会返回独立 AssetHandle；不再使用时必须 Dispose。</remarks>
+            public static AssetHandle<Sprite> LoadTexturePackerSprite(string atlasPath, string spriteName)
             {
                 ValidateAtlasParameters(atlasPath, spriteName);
                 return InitializedInstance.mResource.LoadPNGAtlasSprite(atlasPath, spriteName);
             }
 
             /// <summary>
+            /// 从 TexturePacker 图集中异步读取指定 Sprite；适用于 WebGL 首次加载尚未驻留的 Bundle。
+            /// </summary>
+            /// <remarks>每次成功读取都会返回独立 AssetHandle；不再使用时必须 Dispose。</remarks>
+            public static UniTask<AssetHandle<Sprite>> LoadTexturePackerSpriteAsync(
+                string atlasPath,
+                string spriteName,
+                CancellationToken cancellationToken = default)
+            {
+                ValidateAtlasParameters(atlasPath, spriteName);
+                return InitializedInstance.mResource.LoadPNGAtlasSpriteAsync(
+                    atlasPath,
+                    spriteName,
+                    cancellationToken);
+            }
+
+            /// <summary>
             /// 同步加载 Sprite。
             /// </summary>
-            public static Sprite LoadSprite(string path)
+            /// <remarks>每次成功加载都会返回独立 AssetHandle；不再使用时必须 Dispose。</remarks>
+            public static AssetHandle<Sprite> LoadSprite(string path)
             {
                 ValidateAssetPath(path);
                 return InitializedInstance.mResource.LoadSprite(path);
@@ -137,7 +178,8 @@ namespace ZM.ZMAsset
             /// <summary>
             /// 同步加载 Texture。
             /// </summary>
-            public static Texture LoadTexture(string path)
+            /// <remarks>每次成功加载都会返回独立 AssetHandle；不再使用时必须 Dispose。</remarks>
+            public static AssetHandle<Texture> LoadTexture(string path)
             {
                 ValidateAssetPath(path);
                 return InitializedInstance.mResource.LoadTexture(path);
@@ -146,7 +188,8 @@ namespace ZM.ZMAsset
             /// <summary>
             /// 同步加载 AudioClip。
             /// </summary>
-            public static AudioClip LoadAudio(string path)
+            /// <remarks>每次成功加载都会返回独立 AssetHandle；不再使用时必须 Dispose。</remarks>
+            public static AssetHandle<AudioClip> LoadAudio(string path)
             {
                 ValidateAssetPath(path);
                 return InitializedInstance.mResource.LoadAudio(path);
@@ -175,17 +218,6 @@ namespace ZM.ZMAsset
             }
 
             /// <summary>
-            /// 释放框架缓存中的 Texture；调用前必须保证业务层不再使用该纹理。
-            /// </summary>
-            public static void Release(Texture texture)
-            {
-                if (texture == null)
-                    return;
-
-                InitializedInstance.mResource.Release(texture);
-            }
-
-            /// <summary>
             /// 取消尚未触发的旧回调式对象加载请求。
             /// </summary>
             public static void CancelLegacyLoad(long loadId)
@@ -202,7 +234,7 @@ namespace ZM.ZMAsset
             }
 
             /// <summary>
-            /// 清理所有资源缓存；深度清理会销毁框架跟踪的活动对象，调用前必须停止使用这些对象。
+            /// 清理所有资源缓存；深度清理会销毁框架跟踪的活动对象并使全部 AssetHandle 失效。
             /// </summary>
             public static void ClearAll(bool forceTrackedObjects)
             {

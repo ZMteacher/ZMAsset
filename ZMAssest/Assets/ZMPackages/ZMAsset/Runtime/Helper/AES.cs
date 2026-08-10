@@ -115,50 +115,56 @@ namespace ZM.ZMAsset
 	            Debug.LogError(e);
 	        }
 	    }
-		public static async Task<byte[]> AESFileByteDecryptAwait(string path, string EncrptyKey,bool isHotPath)
+	    /// <summary>
+	    /// 异步读取并解密资源文件。请求、协议或密文无效时抛出可诊断异常，不返回含义不明的 null。
+	    /// </summary>
+		public static async Task<byte[]> AESFileByteDecryptAwait(string path, string EncrptyKey, bool isHotPath)
         {
-      
-            byte[] DecBuffer = null;
-            try
+            string requestUri = ResolveRequestUri(path, isHotPath);
+            string safeTarget = AssetLogUtility.SanitizeUrl(requestUri);
+            byte[] encryptedFileBytes;
+            using (UnityWebRequest request = UnityWebRequest.Get(requestUri))
             {
-                string filePath = "";
-                
- #if  UNITY_EDITOR_OSX || UNITY_IOS
-                filePath = "file://" +path;
-#else 
-                //filePath = path;
-	            filePath= isHotPath?"file://" +path:path;
-#endif
-	            
-                Debug.Log("AESFileByteDecryptAwait LoadStreamingFile  filePath" + filePath);
-                UnityWebRequest unityWebRequest = UnityWebRequest.Get(filePath);
-                unityWebRequest.timeout = 30;
-				await  unityWebRequest.SendWebRequest();
-                Debug.Log("AESFileByteDecryptAwait LoadStreaming  filePath Success" + unityWebRequest.downloadHandler.data.Length +"   "+unityWebRequest.downloadHandler.text);
-                using (MemoryStream fs = new MemoryStream(unityWebRequest.downloadHandler.data))
+                request.timeout = 30;
+                await request.SendWebRequest();
+                if (request.result != UnityWebRequest.Result.Success)
                 {
-                    if (fs != null)
-                    {
-                        byte[] headBuff = new byte[10];
-                        fs.Read(headBuff, 0, headBuff.Length);
-                        string headTag = Encoding.UTF8.GetString(headBuff);
-                        if (headTag == AESHead)
-                        {
-                            byte[] buffer = new byte[fs.Length - headBuff.Length];
-                            fs.Read(buffer, 0, Convert.ToInt32(fs.Length - headBuff.Length));
-                            DecBuffer = AESDecrypt(buffer, EncrptyKey);
-                        }
-                    }
-                    Debug.Log("AESFileByteDecryptAwait 解密完成" + DecBuffer.Length);
+                    throw new IOException(
+                        $"读取 AES 资源文件失败，目标：{safeTarget}，结果：{request.result}，错误：{request.error}");
                 }
-            }
-            catch (Exception e)
-            {
-                Debug.LogError("解密失败："+e);
+
+                encryptedFileBytes = request.downloadHandler?.data;
             }
 
-            return DecBuffer;
+            int headerLength = Encoding.UTF8.GetByteCount(AESHead);
+            if (encryptedFileBytes == null || encryptedFileBytes.Length <= headerLength)
+                throw new InvalidDataException($"AES 资源文件为空或长度不足，目标：{safeTarget}");
+
+            string header = Encoding.UTF8.GetString(encryptedFileBytes, 0, headerLength);
+            if (!string.Equals(header, AESHead, StringComparison.Ordinal))
+                throw new InvalidDataException($"资源文件缺少有效的 AES 文件头，目标：{safeTarget}");
+
+            byte[] encryptedPayload = new byte[encryptedFileBytes.Length - headerLength];
+            Buffer.BlockCopy(encryptedFileBytes, headerLength, encryptedPayload, 0, encryptedPayload.Length);
+            byte[] decryptedBytes = AESDecrypt(encryptedPayload, EncrptyKey);
+            if (decryptedBytes == null || decryptedBytes.Length == 0)
+                throw new InvalidDataException($"AES 资源文件解密后为空，目标：{safeTarget}");
+            return decryptedBytes;
         }
+
+		internal static string ResolveRequestUri(string path, bool isHotPath)
+		{
+			if (string.IsNullOrWhiteSpace(path))
+				throw new ArgumentException("AES 资源文件路径不能为空。", nameof(path));
+
+			if (Path.IsPathRooted(path))
+				return new Uri(Path.GetFullPath(path)).AbsoluteUri;
+			if (Uri.TryCreate(path, UriKind.Absolute, out Uri absoluteUri))
+				return absoluteUri.AbsoluteUri;
+			if (isHotPath)
+				return new Uri(Path.GetFullPath(path)).AbsoluteUri;
+			return path;
+		}
 
 	    /// <summary>
 	    /// 文件解密，传入文件路径，返回字节

@@ -184,6 +184,18 @@ namespace ZM.ZMAsset
             }
         }
 
+        /// <summary>
+        /// 查询指定物理 Bundle 当前是否已经驻留内存。该方法不读取磁盘、不发起网络请求，也不改变引用计数。
+        /// </summary>
+        internal bool IsBundleLoaded(ModuleBundleKey bundleKey)
+        {
+            lock (mLock)
+            {
+                return mAllAlreadyLoadBundleDic.TryGetValue(bundleKey, out AssetBundleCache bundleCache) &&
+                       bundleCache?.assetBundle != null;
+            }
+        }
+
         internal bool TryBeginModuleLoad(string bundleModule)
         {
             if (string.IsNullOrWhiteSpace(bundleModule)) return true;
@@ -989,8 +1001,10 @@ namespace ZM.ZMAsset
 
                 // DependencyOnly 条目只用于构建 Bundle 依赖关系，不进入全局可直接加载资源索引。
                 if (!info.isLoadableEntry) continue;
-                if (string.IsNullOrWhiteSpace(info.bundleName))
-                    throw new InvalidDataException($"模块 {bundleModule} 存在 Bundle 名称为空的资源项。");
+                if (!AssetBundleNameValidator.TryValidateFileName(info.bundleName, out string bundleNameFailure))
+                    throw new InvalidDataException(
+                        $"模块 {bundleModule} 存在无效 Bundle 名称：{info.bundleName ?? "<null>"}，" +
+                        $"原因：{bundleNameFailure}。");
                 if (string.IsNullOrWhiteSpace(info.assetName))
                     throw new InvalidDataException($"模块 {bundleModule} 存在资源名称为空的 Entry：{normalizedPath}");
 
@@ -1065,6 +1079,12 @@ namespace ZM.ZMAsset
                         throw new InvalidDataException(
                             $"模块 {ownerModule} 的 Bundle {bundleName} 包含无效依赖身份。" +
                             $"Module={dependency.bundleModule}，Bundle={dependency.bundleName}");
+                    if (!AssetBundleNameValidator.TryValidateFileName(
+                            dependencyKey.BundleName,
+                            out string dependencyNameFailure))
+                        throw new InvalidDataException(
+                            $"模块 {ownerModule} 的 Bundle {bundleName} 包含无效依赖文件名：" +
+                            $"{dependency.bundleName}，原因：{dependencyNameFailure}。");
                     //00 主 Bundle 自依赖会重复加载和归还，必须过滤；跨模块同名仍是不同合法键。
                     ModuleBundleKey ownerKey = new ModuleBundleKey(ownerModule, bundleName);
                     if (dependencyKey == ownerKey || !uniqueDependencies.Add(dependencyKey)) continue;
@@ -1084,8 +1104,15 @@ namespace ZM.ZMAsset
             foreach (string dependencyName in legacyDependencies)
             {
                 ModuleBundleKey dependencyKey = new ModuleBundleKey(ownerModule, dependencyName);
-                if (string.IsNullOrWhiteSpace(dependencyKey.BundleName) ||
-                    string.Equals(bundleName, dependencyKey.BundleName, StringComparison.Ordinal) ||
+                if (string.IsNullOrWhiteSpace(dependencyKey.BundleName))
+                    continue;
+                if (!AssetBundleNameValidator.TryValidateFileName(
+                        dependencyKey.BundleName,
+                        out string dependencyNameFailure))
+                    throw new InvalidDataException(
+                        $"模块 {ownerModule} 的 Bundle {bundleName} 包含无效旧版依赖文件名：" +
+                        $"{dependencyName}，原因：{dependencyNameFailure}。");
+                if (string.Equals(bundleName, dependencyKey.BundleName, StringComparison.Ordinal) ||
                     !uniqueDependencies.Add(dependencyKey)) continue;
                 result.Add(dependencyKey);
             }
@@ -1291,11 +1318,17 @@ namespace ZM.ZMAsset
         {
             // 所有缓存和异步去重从入口开始使用完整组合键，不再依赖 Bundle 文件名前缀约定。
             ModuleBundleKey bundleKey = new ModuleBundleKey(bundleModuleType, bundleName);
-            if (string.IsNullOrWhiteSpace(bundleKey.ModuleName) || string.IsNullOrWhiteSpace(bundleKey.BundleName))
+            string bundleNameFailure = null;
+            if (string.IsNullOrWhiteSpace(bundleKey.ModuleName) ||
+                !AssetBundleNameValidator.TryValidateFileName(bundleName, out bundleNameFailure))
             {
-                Debug.LogError($"异步加载 AssetBundle 的模块或文件名为空：{bundleKey}");
+                Debug.LogError(
+                    $"异步加载 AssetBundle 的模块或文件名无效。模块：{bundleKey.ModuleName}，" +
+                    $"原因：{bundleNameFailure ?? "模块名称为空"}");
                 return null;
             }
+            bundleModuleType = bundleKey.ModuleName;
+            bundleName = bundleKey.BundleName;
             AssetBundleCache bundle = null;
             mAllAlreadyLoadBundleDic.TryGetValue(bundleKey,out bundle);
             // 构建端启用全局加密后，所有异步加载入口必须采用同一解密策略。
@@ -1408,9 +1441,7 @@ namespace ZM.ZMAsset
                     }
                     return null;
                 }
-                //AssetBundle引用计数增加
-                bundle.referenceCount++;
-                mAllAlreadyLoadBundleDic.TryAdd(bundleKey,bundle);
+                bundle = RegisterLoadedBundle(bundleKey, bundle);
                 //设置任务为完成状态
                 lock (mLock)
                 {
@@ -1438,7 +1469,16 @@ namespace ZM.ZMAsset
         {
             //先到所有的AssetBunel资源字典中查询一下这个资源存不存在，如果存在说明该资源已经打成了AssetBundle包，这种情况下就可以直接加载了
             //如果不存在，则说明该资源 不属于AssetBUnle 给与错误提示。
-            mAllBundleAssetDic.TryGetValue(crc, out var item);
+            BundleItem item;
+            lock (mLock)
+            {
+                if (mAsyncLoadBundleItemActionDic.ContainsKey(crc))
+                {
+                    Debug.LogError($"资源 CRC {crc} 正在异步加载，已拒绝同步重复加载。");
+                    return null;
+                }
+                mAllBundleAssetDic.TryGetValue(crc, out item);
+            }
 
             if (item != null)
             {
@@ -1492,13 +1532,27 @@ namespace ZM.ZMAsset
         {
             // 同步加载与异步加载使用相同的模块 Bundle 身份。
             ModuleBundleKey bundleKey = new ModuleBundleKey(bundleModuleType, bundleName);
-            if (string.IsNullOrWhiteSpace(bundleKey.ModuleName) || string.IsNullOrWhiteSpace(bundleKey.BundleName))
+            string bundleNameFailure = null;
+            if (string.IsNullOrWhiteSpace(bundleKey.ModuleName) ||
+                !AssetBundleNameValidator.TryValidateFileName(bundleName, out bundleNameFailure))
             {
-                Debug.LogError($"同步加载 AssetBundle 的模块或文件名为空：{bundleKey}");
+                Debug.LogError(
+                    $"同步加载 AssetBundle 的模块或文件名无效。模块：{bundleKey.ModuleName}，" +
+                    $"原因：{bundleNameFailure ?? "模块名称为空"}");
                 return null;
             }
-            AssetBundleCache bundle = null;
-            mAllAlreadyLoadBundleDic.TryGetValue(bundleKey,out bundle);
+            bundleModuleType = bundleKey.ModuleName;
+            bundleName = bundleKey.BundleName;
+            AssetBundleCache bundle;
+            lock (mLock)
+            {
+                if (mAsyncLoadBundleActionDic.ContainsKey(bundleKey))
+                {
+                    Debug.LogError($"AssetBundle {bundleKey} 正在异步加载，已拒绝同步重复加载。");
+                    return null;
+                }
+                mAllAlreadyLoadBundleDic.TryGetValue(bundleKey, out bundle);
+            }
 
             if (bundle==null||(bundle!=null&&bundle.assetBundle==null))
             {
@@ -1548,9 +1602,7 @@ namespace ZM.ZMAsset
                     mBundleCachePool.Recycl(bundle);
                     return null;
                 }
-                //AssetBundle引用计数增加
-                bundle.referenceCount++;
-                mAllAlreadyLoadBundleDic.TryAdd(bundleKey,bundle);
+                bundle = RegisterLoadedBundle(bundleKey, bundle);
             }
             else
             {
@@ -1558,6 +1610,37 @@ namespace ZM.ZMAsset
                 bundle.referenceCount++;
             }
             return bundle.assetBundle;
+        }
+
+        /// <summary>
+        /// 登记刚加载的 Bundle；若发生极端的重入竞态，保留已缓存实例并回收重复实例。
+        /// </summary>
+        private AssetBundleCache RegisterLoadedBundle(
+            ModuleBundleKey bundleKey,
+            AssetBundleCache loadedBundle)
+        {
+            AssetBundleCache existingBundle = null;
+            lock (mLock)
+            {
+                if (mAllAlreadyLoadBundleDic.TryGetValue(bundleKey, out existingBundle) &&
+                    existingBundle?.assetBundle != null)
+                {
+                    existingBundle.referenceCount++;
+                }
+                else
+                {
+                    loadedBundle.referenceCount++;
+                    mAllAlreadyLoadBundleDic[bundleKey] = loadedBundle;
+                    return loadedBundle;
+                }
+            }
+
+            AssetBundle duplicateBundle = loadedBundle.assetBundle;
+            loadedBundle.Release();
+            mBundleCachePool.Recycl(loadedBundle);
+            duplicateBundle?.Unload(false);
+            Debug.LogWarning($"检测到 AssetBundle 重复加载，已保留先到缓存并回收重复实例：{bundleKey}");
+            return existingBundle;
         }
 
         /// <summary>
@@ -1688,9 +1771,9 @@ namespace ZM.ZMAsset
         /// <summary>
         /// 释放AssetBundle 并且释放AssetBundle占用的内存资源
         /// </summary>
-        /// <param name="assetitem"></param>
+        /// <param name="bundleItem"></param>
         /// <param name="unLoad"></param>
-        public void ReleaseAssets(BundleItem assetitem,bool unLoad)
+        public void ReleaseAssets(BundleItem bundleItem,bool unLoad)
         {
             //AssetBUndle释放策略一般有两种
             //1.第一种：
@@ -1705,31 +1788,32 @@ namespace ZM.ZMAsset
             // 在跳转场景的时候 通过 AssetBundle.UnLoad(true) 彻底释放所有的资源与内存占用
 
             //AssetBundle assetBundle = null;
-            if (assetitem!=null)
+            if (bundleItem!=null)
             {
-                if (assetitem.obj!=null)  assetitem.obj = null;
-               
-                if (assetitem.objArr!=null)  assetitem.objArr = null;
-                
+                bundleItem.obj = null;
+                bundleItem.objArr = null;
+
+                // BundleItem 仅能归还一次它持有的主 Bundle 和依赖引用。
+                if (bundleItem.assetBundle == null)
+                    return;
+                bundleItem.assetBundle = null;
 
                 ReleaseAssetBundle(
-                    new ModuleBundleKey(assetitem.bundleModuleType, assetitem.bundleName),
+                    new ModuleBundleKey(bundleItem.bundleModuleType, bundleItem.bundleName),
                     unLoad);
-                //00 当前资源项已归还其 Bundle 持有，即使底层 Bundle 因其他资源仍存活，也不能保留陈旧引用。
-                assetitem.assetBundle = null;
 
-                if (assetitem.bundleDependencies != null)
+                if (bundleItem.bundleDependencies != null)
                 {
-                    foreach (ModuleBundleKey dependencyKey in assetitem.bundleDependencies)
+                    foreach (ModuleBundleKey dependencyKey in bundleItem.bundleDependencies)
                     {
-                        //00 完整键已在解析阶段去空、去重并排除主 Bundle，自此按真实模块对称归还。
+                        //完整键已在解析阶段去空、去重并排除主 Bundle，自此按真实模块对称归还。
                         ReleaseAssetBundle(dependencyKey, unLoad);
                     }
                 }
             }
             else
             {
-                Debug.LogError(" assetitem is null, release Assets failed!");
+                Debug.LogError(" bundleItem is null, release Assets failed!");
             }
         }
         /// <summary>
@@ -1753,6 +1837,12 @@ namespace ZM.ZMAsset
                 Debug.LogError($"释放 AssetBundle 缺少模块身份，已拒绝按名称猜测：{bundleName}");
                 return;
             }
+            if (assetitem != null)
+            {
+                if (assetitem.assetBundle == null)
+                    return;
+                assetitem.assetBundle = null;
+            }
             ReleaseAssetBundle(bundleKey, unLoad);
         }
 
@@ -1766,6 +1856,11 @@ namespace ZM.ZMAsset
                 string.IsNullOrWhiteSpace(bundleKey.BundleName) ||
                 !mAllAlreadyLoadBundleDic.TryGetValue(bundleKey, out AssetBundleCache bundleCacheItem)) return;
             if (bundleCacheItem.assetBundle == null) return;
+            if (bundleCacheItem.referenceCount <= 0)
+            {
+                Debug.LogWarning($"AssetBundle 引用计数已为 0，忽略重复释放：{bundleKey}");
+                return;
+            }
 
             bundleCacheItem.referenceCount--;
             //00 引用计数不得长期为负；小于等于零时立即卸载并从组合键缓存移除。

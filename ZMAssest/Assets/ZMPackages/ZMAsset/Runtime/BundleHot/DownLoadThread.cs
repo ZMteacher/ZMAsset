@@ -144,7 +144,8 @@ namespace ZM.ZMAsset
         {
             OnDownLoadSuccess = downLoadSuccess;
             OnDownLoadFailed = downLoadFailed;
-            Debug.Log($"开始下载资源模块：{_mCurBundleModuleName}，文件地址：{mDownLoadUrl}");
+            Debug.Log(
+                $"开始下载资源模块：{_mCurBundleModuleName}，文件地址：{AssetLogUtility.SanitizeUrl(mDownLoadUrl)}");
 
             // 一个文件的全部重试都归属于同一个 Task；禁止递归创建无法追踪的新后台任务。
             CompletionTask = Task.Run(() => DownloadWithRetry(cancellationToken), cancellationToken);
@@ -158,6 +159,7 @@ namespace ZM.ZMAsset
         /// </summary>
         private void DownloadWithRetry(CancellationToken cancellationToken)
         {
+            string safeDownloadUrl = AssetLogUtility.SanitizeUrl(mDownLoadUrl);
             while (curDownLoadCount < MAX_TRY_DOWNLOAD_COUNT)
             {
                 cancellationToken.ThrowIfCancellationRequested();
@@ -168,7 +170,7 @@ namespace ZM.ZMAsset
                 {
                     HttpWebRequest request = WebRequest.Create(mDownLoadUrl) as HttpWebRequest;
                     if (request == null)
-                        throw new InvalidOperationException($"无法创建资源下载请求：{mDownLoadUrl}");
+                        throw new InvalidOperationException($"无法创建资源下载请求：{safeDownloadUrl}");
 
                     request.Method = "GET";
                     request.Timeout = 60000;
@@ -181,7 +183,7 @@ namespace ZM.ZMAsset
                     using (FileStream fileStream = File.Create(mFileSavePath))
                     {
                         if (stream == null)
-                            throw new IOException($"服务器没有返回文件流：{mDownLoadUrl}");
+                            throw new IOException($"服务器没有返回文件流：{safeDownloadUrl}");
 
                         byte[] buffer = new byte[81920];
                         int size;
@@ -222,7 +224,9 @@ namespace ZM.ZMAsset
                 }
                 catch (Exception exception)
                 {
-                    Debug.LogError($"下载资源失败，模块：{_mCurBundleModuleName}，文件：{mHotFileInfo.abName}，第 {curDownLoadCount} 次，异常：{exception}");
+                    Debug.LogError(
+                        $"下载资源失败，模块：{_mCurBundleModuleName}，文件：{mHotFileInfo.abName}，" +
+                        $"地址：{safeDownloadUrl}，第 {curDownLoadCount} 次，异常类型：{exception.GetType().Name}");
                 }
 
                 DeletePartialFile();
@@ -286,6 +290,7 @@ namespace ZM.ZMAsset
         /// </summary>
         private async Task<bool> InternalStartDownLoadAsync()
         {
+            string safeDownloadUrl = AssetLogUtility.SanitizeUrl(mDownLoadUrl);
             // 重试必须在当前任务内部循环，不能再次进入任务去重入口，否则会等待当前任务自身并永久挂起。
             while (curDownLoadCount < MAX_TRY_DOWNLOAD_COUNT)
             {
@@ -357,16 +362,18 @@ namespace ZM.ZMAsset
                     if (mDownLoadSizeKB > 0 && fileIsComplete)
                     {
                         Debug.Log("FixDownLoad OnDownLoadSuccess ModuleEnum:" + _mCurBundleModuleName + " AssetBundleUrl:" +
-                                  mDownLoadUrl + " FileSavePath:" + mFileSavePath);
+                                  safeDownloadUrl + " FileName:" + Path.GetFileName(mFileSavePath));
                         return true;
                     }
 
                     Debug.LogError("FixDownLoad File DownLoad exception plase check file fileName:" +
-                                   mHotFileInfo.abName + " fileUrl:" + mDownLoadUrl);
+                                   mHotFileInfo.abName + " fileUrl:" + safeDownloadUrl);
                 }
                 catch (Exception e)
                 {
-                    Debug.LogError("FixDownLoad DownLoad AssetBundle Error Url:" + mDownLoadUrl + " Exception:" + e);
+                    Debug.LogError(
+                        "FixDownLoad DownLoad AssetBundle Error Url:" + safeDownloadUrl +
+                        " ExceptionType:" + e.GetType().Name);
                 }
 
                 if (curDownLoadCount < MAX_TRY_DOWNLOAD_COUNT)

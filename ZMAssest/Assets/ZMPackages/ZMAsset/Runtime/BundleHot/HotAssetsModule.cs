@@ -560,7 +560,9 @@ namespace ZM.ZMAsset
         private async UniTask DownLoadHotAssetsManifestAsync()
         {
             string url = $"{BundleSettings.Instance.AssetBundleDownLoadUrl}/HotAssets/{CurBundleModuleName}/{BundleSettings.Instance.HotManifestName(CurBundleModuleName)}";
-            Debug.Log($"*** Request AssetBundle HotAssetsMainfest Url Start Module:{CurBundleModuleName} url:{url}");
+            Debug.Log(
+                $"*** Request AssetBundle HotAssetsMainfest Url Start Module:{CurBundleModuleName} " +
+                $"url:{AssetLogUtility.SanitizeUrl(url)}");
 
             using (UnityWebRequest webRequest = UnityWebRequest.Get(url))
             {
@@ -854,36 +856,12 @@ namespace ZM.ZMAsset
                     $"模块 {CurBundleModuleName} 的热更清单包含空文件项。");
             }
 
-            if (string.IsNullOrWhiteSpace(hotFile.abName) || hotFile.abName != hotFile.abName.Trim())
+            if (!AssetBundleNameValidator.TryValidateFileName(hotFile.abName, out string fileNameFailure))
             {
                 throw new HotUpdateVersionCheckException(
                     CurBundleModuleName,
                     "InvalidManifest",
-                    $"模块 {CurBundleModuleName} 的热更文件名为空或包含首尾空白。");
-            }
-
-            if (Path.IsPathRooted(hotFile.abName) ||
-                hotFile.abName.IndexOf('/', StringComparison.Ordinal) >= 0 ||
-                hotFile.abName.IndexOf('\\', StringComparison.Ordinal) >= 0 ||
-                hotFile.abName.IndexOf("..", StringComparison.Ordinal) >= 0)
-            {
-                throw new HotUpdateVersionCheckException(
-                    CurBundleModuleName,
-                    "InvalidManifest",
-                    $"模块 {CurBundleModuleName} 的热更文件名包含非法路径片段：{hotFile.abName}。");
-            }
-
-            char[] invalidFileNameChars = Path.GetInvalidFileNameChars();
-            for (int index = 0; index < hotFile.abName.Length; index++)
-            {
-                char character = hotFile.abName[index];
-                if (char.IsControl(character) || Array.IndexOf(invalidFileNameChars, character) >= 0)
-                {
-                    throw new HotUpdateVersionCheckException(
-                        CurBundleModuleName,
-                        "InvalidManifest",
-                        $"模块 {CurBundleModuleName} 的热更文件名包含非法字符：{hotFile.abName}。");
-                }
+                    $"模块 {CurBundleModuleName} 的热更文件名无效：{fileNameFailure}。文件：{hotFile.abName ?? "<null>"}");
             }
 
             if (!assetNames.Add(hotFile.abName))

@@ -54,7 +54,7 @@ namespace ZM.ZMAsset
                             if (webRequest.result != UnityWebRequest.Result.Success)
                                 throw new InvalidOperationException(
                                     $"WebGL RemoteAsset 请求失败，模块：{request.ModuleName}，Bundle：{request.FileInfo.abName}，" +
-                                    $"地址：{RemoveQuery(url)}，结果：{webRequest.result}，错误：{webRequest.error}");
+                                    $"地址：{AssetLogUtility.SanitizeUrl(url)}，结果：{webRequest.result}，错误：{webRequest.error}");
 
                             AssetBundle bundle = DownloadHandlerAssetBundle.GetContent(webRequest);
                             if (bundle == null)
@@ -76,7 +76,9 @@ namespace ZM.ZMAsset
                     }
                 }
 
-                Debug.LogError($"WebGL RemoteAsset 下载在 {MaximumAttempts} 次尝试后失败。操作：{request.OperationId}，异常：{lastException}");
+                Debug.LogError(
+                    $"WebGL RemoteAsset 下载在 {MaximumAttempts} 次尝试后失败。操作：{request.OperationId}，" +
+                    $"异常类型：{lastException?.GetType().Name ?? "Unknown"}");
                 return false;
             }
             finally
@@ -96,12 +98,6 @@ namespace ZM.ZMAsset
         }
 
         internal static string CombineUrl(string root, string fileName) => root.TrimEnd('/') + "/" + fileName;
-
-        private static string RemoveQuery(string url)
-        {
-            int index = url?.IndexOf('?') ?? -1;
-            return index < 0 ? url : url.Substring(0, index);
-        }
 
         private sealed class WebGLAssetDownloadBatch : IAssetDownloadBatch
         {

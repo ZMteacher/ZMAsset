@@ -31,7 +31,8 @@ namespace ZM.ZMAsset
             /// 清理模块资源并移除模块配置、依赖图与 Shared 租约。
             /// </summary>
             /// <remarks>
-            /// ForceTrackedObjects 不负责业务代码持有的裸 Texture、Sprite、AudioClip 或 TextAsset 引用。
+            /// PooledOnly 会拒绝卸载仍有活动 AssetHandle 的资源；ForceTrackedObjects 会使这些句柄失效，
+            /// 调用方必须保证之后不再访问对应资源对象。
             /// </remarks>
             public static UniTask<ModuleUnloadResult> UnloadAsync(string moduleName, ModuleClearMode mode = ModuleClearMode.PooledOnly)
             {

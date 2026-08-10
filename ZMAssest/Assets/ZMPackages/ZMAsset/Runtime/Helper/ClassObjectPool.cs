@@ -58,7 +58,6 @@ namespace ZM.ZMAsset
         {
             if (obj==null)
             {
-                Debug.LogError("Recycl Obj failed,obj is null!");
                 return;
             }
             mPool.Push(obj);

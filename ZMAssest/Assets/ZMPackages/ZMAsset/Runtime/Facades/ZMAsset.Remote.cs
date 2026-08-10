@@ -1,7 +1,7 @@
 using System;
+using System.Threading;
 using Cysharp.Threading.Tasks;
 using UnityEngine;
-using System.Threading;
 
 namespace ZM.ZMAsset
 {
@@ -27,11 +27,35 @@ namespace ZM.ZMAsset
             /// 按需下载并加载指定类型的远端资源。
             /// </summary>
             /// <param name="onProgress">可选的下载进度回调（0~1），仅在发生远端下载时触发。</param>
-            public static UniTask<T> LoadAsync<T>(string path, string moduleName, Action<float> onProgress = null) where T : UnityEngine.Object
+            public static UniTask<AssetHandle<T>> LoadAsync<T>(string path, string moduleName, Action<float> onProgress = null, CancellationToken cancellationToken = default) where T : UnityEngine.Object
             {
                 ValidateAssetPath(path);
                 ValidateModuleName(moduleName);
-                return GetLoader().LoadRemoteAsync<T>(path, moduleName, onProgress);
+                return GetLoader().LoadRemoteAsync<T>(path, moduleName, onProgress, cancellationToken);
+            }
+
+            /// <summary>
+            /// 查询指定远端资源是否可以在不触发远端下载的情况下加载。
+            /// 查询只读取当前内存状态或已经提交的本地状态，不会刷新服务器 Manifest 或启动下载。
+            /// </summary>
+            /// <remarks>
+            /// 返回值是查询时刻的快照；后续调用 LoadAsync 时框架仍会重新校验，避免检查与加载之间的状态竞态。
+            /// WebGL 冷启动后无法无请求确认 Unity 浏览器 Bundle 缓存时返回 Unknown。
+            /// </remarks>
+            public static UniTask<RemoteAssetLocalResult> GetLocalStatusAsync<T>(string path, string moduleName, CancellationToken cancellationToken = default) where T : UnityEngine.Object
+            {
+                ValidateAssetPath(path);
+                ValidateModuleName(moduleName);
+                return GetLoader().GetRemoteLocalStatusAsync<T>(path, moduleName, cancellationToken);
+            }
+
+            /// <summary>
+            /// 查询指定远端资源当前是否已完整就绪；仅当详细状态为 Ready 时返回 true。
+            /// </summary>
+            public static async UniTask<bool> IsLocalAvailableAsync<T>(string path, string moduleName, CancellationToken cancellationToken = default) where T : UnityEngine.Object
+            {
+                RemoteAssetLocalResult result = await GetLocalStatusAsync<T>(path, moduleName, cancellationToken);
+                return result.IsAvailable;
             }
 
             /// <summary>

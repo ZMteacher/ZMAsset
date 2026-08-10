@@ -8,6 +8,17 @@ using System.Threading;
 namespace ZM.ZMAsset
 {
     /// <summary>
+    /// 单个物理 Bundle 的内部本地状态；公共 API 只暴露聚合后的资源级状态。
+    /// </summary>
+    internal enum RemoteBundleLocalState
+    {
+        Ready,
+        Missing,
+        Invalid,
+        Unknown
+    }
+
+    /// <summary>
     /// 负责远端资源模块初始化、缺失 Bundle 下载和校验后原子提交。
     /// </summary>
     internal sealed class RemoteAssetSystem : Singleton<RemoteAssetSystem>
@@ -161,6 +172,247 @@ namespace ZM.ZMAsset
             }
 
             return true;
+        }
+
+        /// <summary>
+        /// 查询资源是否已经具备无需远端下载的完整 Bundle 闭包。该流程不会刷新服务器 Manifest，也不会启动下载。
+        /// </summary>
+        internal async UniTask<RemoteAssetLocalResult> GetLocalStatusAsync(
+            string assetPath,
+            string moduleName,
+            uint crc,
+            CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            AssetBundleManager bundleManager = AssetBundleManager.Instance;
+            if (!bundleManager.IsAssetModuleInitialized(moduleName))
+            {
+                return new RemoteAssetLocalResult(
+                    assetPath,
+                    moduleName,
+                    RemoteAssetLocalStatus.ModuleNotInitialized,
+                    0,
+                    null);
+            }
+
+            BundleItem item = bundleManager.GetBundleItemByCrc(crc);
+            if (item == null ||
+                !string.Equals(item.bundleModuleType, moduleName, StringComparison.Ordinal))
+            {
+                return new RemoteAssetLocalResult(
+                    assetPath,
+                    moduleName,
+                    RemoteAssetLocalStatus.AssetNotConfigured,
+                    0,
+                    null);
+            }
+
+            List<ModuleBundleKey> requiredBundles = CollectRequiredBundleKeys(item, moduleName);
+            if (item.assetBundle != null || !item.isRemoteAsset)
+            {
+                return new RemoteAssetLocalResult(
+                    assetPath,
+                    moduleName,
+                    RemoteAssetLocalStatus.Ready,
+                    requiredBundles.Count,
+                    null);
+            }
+
+            RemoteAssetModule module = GetOrCreateModule(moduleName);
+            RemoteAssetLocalStatus manifestStatus =
+                await EnsureLocalManifestAvailableAsync(module, cancellationToken);
+            if (manifestStatus != RemoteAssetLocalStatus.Ready)
+            {
+                return new RemoteAssetLocalResult(
+                    assetPath,
+                    moduleName,
+                    manifestStatus,
+                    requiredBundles.Count,
+                    null);
+            }
+
+            List<RemoteBundleLocalState> bundleStates =
+                new List<RemoteBundleLocalState>(requiredBundles.Count);
+            List<string> unavailableBundles = new List<string>();
+            foreach (ModuleBundleKey bundleKey in requiredBundles)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                RemoteBundleLocalState bundleState = GetBundleLocalState(bundleKey, module);
+                bundleStates.Add(bundleState);
+                if (bundleState != RemoteBundleLocalState.Ready)
+                    unavailableBundles.Add(bundleKey.ToString());
+            }
+
+            return new RemoteAssetLocalResult(
+                assetPath,
+                moduleName,
+                ClassifyLocalBundleStates(bundleStates),
+                requiredBundles.Count,
+                unavailableBundles);
+        }
+
+        private static async UniTask<RemoteAssetLocalStatus> EnsureLocalManifestAvailableAsync(
+            RemoteAssetModule module,
+            CancellationToken cancellationToken)
+        {
+            if (module.UsesBrowserCache)
+                await module.BrowserInitializationGate.WaitAsync(cancellationToken);
+            else
+                await module.InitializationGate.WaitAsync(cancellationToken);
+
+            try
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                if (await module.TryLoadCommittedManifestForLocalQueryAsync())
+                    return RemoteAssetLocalStatus.Ready;
+
+                return module.UsesBrowserCache
+                    ? RemoteAssetLocalStatus.Unknown
+                    : RemoteAssetLocalStatus.ManifestUnavailable;
+            }
+            finally
+            {
+                if (module.UsesBrowserCache)
+                    module.BrowserInitializationGate.Release();
+                else
+                    module.InitializationGate.Release();
+            }
+        }
+
+        private RemoteBundleLocalState GetBundleLocalState(
+            ModuleBundleKey bundleKey,
+            RemoteAssetModule requestedModule)
+        {
+            if (AssetBundleManager.Instance.IsBundleLoaded(bundleKey))
+                return RemoteBundleLocalState.Ready;
+
+            if (!string.Equals(
+                    bundleKey.ModuleName,
+                    requestedModule.ModuleName,
+                    StringComparison.Ordinal))
+            {
+                // Remote 加载链只会按需准备当前模块的 Bundle；跨模块依赖始终从其所属模块的
+                // 内嵌/全局热更目录加载，不能拿另一个 Remote Manifest 判断，否则会把合法的
+                // Shared 依赖误报为 Invalid。
+                return GetBundledDependencyLocalState(bundleKey);
+            }
+
+            if (!requestedModule.HasActiveManifest)
+                return RemoteBundleLocalState.Unknown;
+            if (!requestedModule.TryGetRemoteFile(bundleKey.BundleName, out _))
+                return RemoteBundleLocalState.Invalid;
+            return requestedModule.TryGetFileNeedingDownload(bundleKey.BundleName, out _)
+                ? RemoteBundleLocalState.Missing
+                : RemoteBundleLocalState.Ready;
+        }
+
+        /// <summary>
+        /// 按 AssetBundleManager 的真实来源规则判断跨模块依赖，不加载 Bundle，也不改变引用计数。
+        /// WebGL/Android 的内嵌资源不是普通可同步探测文件，未驻留内存时只能保守返回 Unknown。
+        /// </summary>
+        private static RemoteBundleLocalState GetBundledDependencyLocalState(
+            ModuleBundleKey bundleKey)
+        {
+            AssetRuntimeBackend runtimeBackend = AssetRuntimeBackendFactory.Current;
+            if (runtimeBackend.PlatformKind == AssetRuntimePlatformKind.Native &&
+                BundleSettings.Instance.bundleHotType == BundleHotEnum.Hot)
+            {
+                string hotPath =
+                    BundleSettings.Instance.GetHotAssetsPath(bundleKey.ModuleName) +
+                    bundleKey.BundleName;
+                if (File.Exists(hotPath))
+                    return RemoteBundleLocalState.Ready;
+            }
+
+            if (runtimeBackend.PlatformKind == AssetRuntimePlatformKind.WebGL ||
+                Application.platform == RuntimePlatform.Android)
+                return RemoteBundleLocalState.Unknown;
+
+            string builtinPath =
+                BundleSettings.Instance.GetAssetsBuiltinBundlePath(bundleKey.ModuleName) +
+                bundleKey.BundleName;
+            return File.Exists(builtinPath)
+                ? RemoteBundleLocalState.Ready
+                : RemoteBundleLocalState.Missing;
+        }
+
+        /// <summary>
+        /// 构建资源主 Bundle 与完整配置依赖闭包，并按模块+文件名去重。
+        /// </summary>
+        internal static List<ModuleBundleKey> CollectRequiredBundleKeys(
+            BundleItem item,
+            string moduleName)
+        {
+            List<ModuleBundleKey> result = new List<ModuleBundleKey>();
+            if (item == null)
+                return result;
+
+            HashSet<ModuleBundleKey> collected = new HashSet<ModuleBundleKey>();
+            void Add(ModuleBundleKey bundleKey)
+            {
+                if (!string.IsNullOrWhiteSpace(bundleKey.ModuleName) &&
+                    !string.IsNullOrWhiteSpace(bundleKey.BundleName) &&
+                    collected.Add(bundleKey))
+                {
+                    result.Add(bundleKey);
+                }
+            }
+
+            Add(new ModuleBundleKey(moduleName, item.bundleName));
+            if (item.bundleDependencies != null && item.bundleDependencies.Count > 0)
+            {
+                foreach (ModuleBundleKey dependency in item.bundleDependencies)
+                    Add(dependency);
+            }
+            else if (item.bundleDependce != null)
+            {
+                foreach (string dependency in item.bundleDependce)
+                    Add(new ModuleBundleKey(moduleName, dependency));
+            }
+
+            return result;
+        }
+
+        /// <summary>
+        /// 将物理 Bundle 状态聚合成业务可消费的资源级状态。Invalid 优先于缺失，Unknown 只在没有确定失败时返回。
+        /// </summary>
+        internal static RemoteAssetLocalStatus ClassifyLocalBundleStates(
+            IReadOnlyList<RemoteBundleLocalState> bundleStates)
+        {
+            if (bundleStates == null || bundleStates.Count == 0)
+                return RemoteAssetLocalStatus.Invalid;
+
+            bool hasInvalid = false;
+            bool isMainBundleMissing = false;
+            bool hasMissingDependency = false;
+            bool hasUnknown = false;
+            for (int index = 0; index < bundleStates.Count; index++)
+            {
+                RemoteBundleLocalState state = bundleStates[index];
+                if (state == RemoteBundleLocalState.Invalid)
+                {
+                    hasInvalid = true;
+                }
+                else if (state == RemoteBundleLocalState.Missing)
+                {
+                    if (index == 0)
+                        isMainBundleMissing = true;
+                    else
+                        hasMissingDependency = true;
+                }
+                else if (state == RemoteBundleLocalState.Unknown)
+                {
+                    hasUnknown = true;
+                }
+            }
+
+            if (hasInvalid)
+                return RemoteAssetLocalStatus.Invalid;
+            if (isMainBundleMissing)
+                return RemoteAssetLocalStatus.Missing;
+            if (hasMissingDependency)
+                return RemoteAssetLocalStatus.Incomplete;
+            return hasUnknown ? RemoteAssetLocalStatus.Unknown : RemoteAssetLocalStatus.Ready;
         }
 
         /// <summary>

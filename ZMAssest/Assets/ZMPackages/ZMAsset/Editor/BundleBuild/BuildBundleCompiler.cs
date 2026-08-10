@@ -245,8 +245,14 @@ namespace ZM.ZMAsset
                     throw new InvalidOperationException($"模块 {_mBundleModuleName} 重复生成 Bundle：{bundleBuild.assetBundleName}");
 
                 //00 只提取本上下文声明的精确文件，Unity 根 Manifest 和其他模块 Bundle 不会混入。
-                string sourcePath = Path.Combine(normalizedRawPath, bundleBuild.assetBundleName);
-                string destinationPath = Path.Combine(normalizedModulePath, bundleBuild.assetBundleName);
+                string sourcePath = AssetBundleNameValidator.ResolveChildPath(
+                    normalizedRawPath,
+                    bundleBuild.assetBundleName,
+                    $"模块 {_mBundleModuleName} 的原始 Bundle 输出");
+                string destinationPath = AssetBundleNameValidator.ResolveChildPath(
+                    normalizedModulePath,
+                    bundleBuild.assetBundleName,
+                    $"模块 {_mBundleModuleName} 的 staging Bundle 输出");
                 //00 缺失任何声明 Bundle 都意味着统一构建不完整，禁止发布部分结果。
                 if (!File.Exists(sourcePath))
                     throw new FileNotFoundException(
@@ -267,7 +273,10 @@ namespace ZM.ZMAsset
                 //00 输出名称已在 CollectSourceEntries 中做忽略大小写唯一校验，可以安全复制。
                 File.Copy(
                     sourceEntry.FullPath,
-                    Path.Combine(normalizedModulePath, sourceEntry.OutputFileName),
+                    AssetBundleNameValidator.ResolveChildPath(
+                        normalizedModulePath,
+                        sourceEntry.OutputFileName,
+                        $"模块 {_mBundleModuleName} 的源文件输出"),
                     false);
             }
 
@@ -1234,7 +1243,7 @@ namespace ZM.ZMAsset
             }
             //生成AsestBundle配置文件
             string json = JsonConvert.SerializeObject(config,Formatting.Indented);
-            string bundleConfigPath = Application.dataPath + "/" + BundleSettings.Instance.ZMAssetRootPath + "/Config/" + _mBundleModuleName.ToString().ToLower() + "assetbundleconfig.json";
+            string bundleConfigPath = Application.dataPath + "/" + BundleSettings.Instance.ZMAssetRootPath + "/Config/" + _mBundleModuleName.ToString().ToLowerInvariant() + "assetbundleconfig.json";
             StreamWriter writer= File.CreateText(bundleConfigPath);
             writer.Write(json);
             writer.Dispose();
@@ -1295,7 +1304,7 @@ namespace ZM.ZMAsset
             {
                 i++;
                 ZMBuildProgress.Report("生成构建列表", item.Key, .38f + .04f * i / Mathf.Max(1, mAllFolderBundleDic.Count));
-                mBundleBuildList.Add(new AssetBundleBuild(){ assetBundleName =$"{item.Key.ToLower()}{BundleSettings.Instance.ABSUFFIX}" , assetNames = item.Value.ToArray() });
+                mBundleBuildList.Add(new AssetBundleBuild(){ assetBundleName = CreatePhysicalBundleFileName(item.Key) , assetNames = item.Value.ToArray() });
             }
             //收集所有要打包的预制体Bundle
             i = 0;
@@ -1303,7 +1312,7 @@ namespace ZM.ZMAsset
             {
                 i++;
                 ZMBuildProgress.Report("生成构建列表", item.Key, .42f + .04f * i / Mathf.Max(1, mAllPrefabsBundleDic.Count));
-                mBundleBuildList.Add(new AssetBundleBuild(){ assetBundleName = $"{item.Key.ToLower()}{BundleSettings.Instance.ABSUFFIX}", assetNames = item.Value.ToArray() });
+                mBundleBuildList.Add(new AssetBundleBuild(){ assetBundleName = CreatePhysicalBundleFileName(item.Key), assetNames = item.Value.ToArray() });
             }
             //收集所有要打包的单文件包Bundle
             i = 0;
@@ -1311,12 +1320,14 @@ namespace ZM.ZMAsset
             {
                 i++;
                 ZMBuildProgress.Report("生成构建列表", item.Key, .46f + .04f * i / Mathf.Max(1, mSingleFileBundleDic.Count));
-                mBundleBuildList.Add(new AssetBundleBuild(){ assetBundleName = $"{item.Key.ToLower()}{BundleSettings.Instance.ABSUFFIX}", assetNames = item.Value.ToArray() });
+                mBundleBuildList.Add(new AssetBundleBuild(){ assetBundleName = CreatePhysicalBundleFileName(item.Key), assetNames = item.Value.ToArray() });
             }
             
             //收集至Bundle打包配置文件
-            string bundleConfigPath = Application.dataPath + "/" + BundleSettings.Instance.ZMAssetRootPath + "/Config/" + _mBundleModuleName.ToString().ToLower() + "assetbundleconfig.json";
-            mBundleBuildList.Add(new AssetBundleBuild(){ assetBundleName = _mBundleModuleName.ToString().ToLower() + "bundleconfig"+BundleSettings.Instance.ABSUFFIX,assetNames = new []
+            string bundleConfigPath = Application.dataPath + "/" + BundleSettings.Instance.ZMAssetRootPath + "/Config/" + _mBundleModuleName.ToString().ToLowerInvariant() + "assetbundleconfig.json";
+            string configBundleName = CreatePhysicalBundleFileName(
+                _mBundleModuleName.ToString().ToLowerInvariant() + "bundleconfig");
+            mBundleBuildList.Add(new AssetBundleBuild(){ assetBundleName = configBundleName,assetNames = new []
             {
                 //00 Application.dataPath 后已带分隔符，替换为 Assets 可避免生成 Assets//... 的非规范路径。
                 $"{bundleConfigPath.Replace(Application.dataPath, "Assets").Replace("\\", "/")}"
@@ -1344,9 +1355,21 @@ namespace ZM.ZMAsset
             return false;
         }
 
-        private string GenerateBundleName(string abName)
+        internal string GenerateBundleName(string abName)
         {
-            return _mBundleModuleName.ToString() + "_" + abName;
+            string validatedName = AssetBundleNameValidator.EnsureValidFileName(
+                abName,
+                $"模块 {_mBundleModuleName} 的 Bundle 名称");
+            return AssetBundleNameValidator.EnsureValidFileName(
+                _mBundleModuleName + "_" + validatedName,
+                $"模块 {_mBundleModuleName} 的最终 Bundle 名称");
+        }
+
+        private string CreatePhysicalBundleFileName(string bundleName)
+        {
+            return AssetBundleNameValidator.EnsureValidFileName(
+                bundleName.ToLowerInvariant() + BundleSettings.Instance.ABSUFFIX,
+                $"模块 {_mBundleModuleName} 的物理 Bundle 文件名");
         }
 
         /// <summary>

@@ -20,7 +20,19 @@ namespace ZM.ZMAsset
         /// 按需下载并加载远端资源；本地文件有效时直接复用。
         /// </summary>
         /// <param name="onProgress">可选的下载进度回调（0~1），仅在发生远端下载时触发。</param>
-        UniTask<T> LoadRemoteAsync<T>(string path, string moduleName, Action<float> onProgress = null) where T : UnityEngine.Object;
+        UniTask<AssetHandle<T>> LoadRemoteAsync<T>(
+            string path,
+            string moduleName,
+            Action<float> onProgress = null,
+            CancellationToken cancellationToken = default) where T : UnityEngine.Object;
+
+        /// <summary>
+        /// 查询远端资源在当前平台中的本地可用状态，不刷新服务器 Manifest，也不启动下载。
+        /// </summary>
+        UniTask<RemoteAssetLocalResult> GetRemoteLocalStatusAsync<T>(
+            string path,
+            string moduleName,
+            CancellationToken cancellationToken = default) where T : UnityEngine.Object;
 
         /// <summary>
         /// 闲时预下载整个模块尚未就绪的远端文件；串行下载，不抢占前台加载带宽。
