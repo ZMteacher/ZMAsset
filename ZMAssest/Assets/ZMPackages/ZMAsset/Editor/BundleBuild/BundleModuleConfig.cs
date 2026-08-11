@@ -131,7 +131,7 @@ public class BundleModuleConfig : EditorWindow
     }
 
     /// <summary>
-    /// 00 在旧版独立配置窗口中复用 ZMAsset 暗色下拉控件，避免两个配置入口行为不一致。
+    ///  在旧版独立配置窗口中复用 ZMAsset 暗色下拉控件，避免两个配置入口行为不一致。
     /// </summary>
     private void DrawPrefabDependencyMode()
     {
@@ -282,7 +282,7 @@ public class BundleModuleConfig : EditorWindow
     }
 
     /// <summary>
-    /// 00 与主抽屉共用同一过滤语义，移除空白配置项。
+    ///  与主抽屉共用同一过滤语义，移除空白配置项。
     /// </summary>
     private static string[] RemoveEmptyPaths(string[] paths)
     {

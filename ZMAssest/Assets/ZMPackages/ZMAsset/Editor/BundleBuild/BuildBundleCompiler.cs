@@ -86,7 +86,7 @@ namespace ZM.Asset
         private Dictionary<string, List<string>> mAllPrefabsBundleDic => mContext.PrefabBundles;
 
         /// <summary>
-        /// 00 逐文件分包 Bundle 字典：目录下每个可打包文件独占一个 Bundle。
+        ///  逐文件分包 Bundle 字典：目录下每个可打包文件独占一个 Bundle。
         /// </summary>
         private Dictionary<string, List<string>> mSingleFileBundleDic => mContext.SingleFileBundles;
         /// <summary>
@@ -134,7 +134,7 @@ namespace ZM.Asset
         private string mConfgDataPath { get => mContext.ConfigDataPath; set => mContext.ConfigDataPath = value; }
 
         /// <summary>
-        /// 00 创建只操作指定构建上下文的编译器实例。
+        ///  创建只操作指定构建上下文的编译器实例。
         /// </summary>
         internal BuildBundleCompiler(ModuleBuildContext context)
         {
@@ -162,7 +162,7 @@ namespace ZM.Asset
         }
 
         /// <summary>
-        /// 00 为统一多模块 BuildPipeline 收集一个模块的完整构建输入，但不写入发布目录也不调用 Unity 构建。
+        ///  为统一多模块 BuildPipeline 收集一个模块的完整构建输入，但不写入发布目录也不调用 Unity 构建。
         /// </summary>
         internal void PrepareForOrchestration(
             BundleModuleData moduleData,
@@ -200,7 +200,7 @@ namespace ZM.Asset
         }
 
         /// <summary>
-        /// 00 使用统一资源位置映射写入当前模块配置。
+        ///  使用统一资源位置映射写入当前模块配置。
         /// </summary>
         internal void WriteConfigForOrchestration(
             IReadOnlyDictionary<string, AssetBundleBuildLocation> globalAssetLocations,
@@ -211,13 +211,13 @@ namespace ZM.Asset
         }
 
         /// <summary>
-        /// 00 暴露只读上下文引用给统一编排器；集合修改仍由当前编译器方法负责。
+        ///  暴露只读上下文引用给统一编排器；集合修改仍由当前编译器方法负责。
         /// </summary>
         internal ModuleBuildContext Context => mContext;
 
         /// <summary>
-        /// 00 从 Unity 的统一原始输出中提取当前模块拥有的 Bundle 与源文件，并在独立 staging 中完成加密。
-        /// 00 该方法不会触碰正式发布目录，编排器只有在所有模块均通过校验后才执行原子切换。
+        ///  从 Unity 的统一原始输出中提取当前模块拥有的 Bundle 与源文件，并在独立 staging 中完成加密。
+        ///  该方法不会触碰正式发布目录，编排器只有在所有模块均通过校验后才执行原子切换。
         /// </summary>
         internal void MaterializeOrchestratedOutput(string rawOutputPath, string moduleStagingPath)
         {
@@ -303,7 +303,7 @@ namespace ZM.Asset
         }
 
         /// <summary>
-        /// 00 根据当前模块元数据和指定 staging 文件生成热更清单字节，但不直接写入任何正式目录。
+        ///  根据当前模块元数据和指定 staging 文件生成热更清单字节，但不直接写入任何正式目录。
         /// </summary>
         internal byte[] CreateManifestBytesForOrchestration(string contentPath)
         {
@@ -394,7 +394,7 @@ namespace ZM.Asset
         }
 
         /// <summary>
-        /// 00 返回当前模块和平台对应的固定热更清单文件名。
+        ///  返回当前模块和平台对应的固定热更清单文件名。
         /// </summary>
         internal string GetManifestFileNameForOrchestration()
         {
@@ -770,7 +770,7 @@ namespace ZM.Asset
         }
 
         /// <summary>
-        /// 00 逐文件分包规则：目录下每个可打包资源文件（排除 .cs/.meta/.prefab）单独成为一个 Bundle。
+        ///  逐文件分包规则：目录下每个可打包资源文件（排除 .cs/.meta/.prefab）单独成为一个 Bundle。
         /// </summary>
         private void BuildAllSingleFiles()
         {
@@ -843,7 +843,7 @@ namespace ZM.Asset
         }
 
         /// <summary>
-        /// 00 为逐文件分包重叠错误定位已占用该资源的 Bundle 来源；仅在构建失败路径执行，不影响正常构建性能。
+        ///  为逐文件分包重叠错误定位已占用该资源的 Bundle 来源；仅在构建失败路径执行，不影响正常构建性能。
         /// </summary>
         private string DescribeExistingBundleOwner(string assetPath)
         {
@@ -868,7 +868,7 @@ namespace ZM.Asset
         }
 
         /// <summary>
-        /// 00 判断 AssetDatabase 返回的依赖路径能否作为项目 AssetBundle 资源。
+        ///  判断 AssetDatabase 返回的依赖路径能否作为项目 AssetBundle 资源。
         /// </summary>
         private static bool IsBundleableAssetPath(string path)
         {
@@ -880,7 +880,7 @@ namespace ZM.Asset
         }
 
         /// <summary>
-        /// 00 计算 Prefab 规则允许业务代码主动加载的路径集合，不改变依赖的 Bundle 分配结果。
+        ///  计算 Prefab 规则允许业务代码主动加载的路径集合，不改变依赖的 Bundle 分配结果。
         /// </summary>
         /// <param name="prefabPath">规则直接找到的 Prefab 路径。</param>
         /// <param name="dependencies">Prefab 的稳定递归依赖快照。</param>
@@ -927,7 +927,7 @@ namespace ZM.Asset
         }
 
         /// <summary>
-        /// 00 创建与枚举顺序无关的消费者签名，作为自动 Shared 分组和 CRC 命名的唯一依据。
+        ///  创建与枚举顺序无关的消费者签名，作为自动 Shared 分组和 CRC 命名的唯一依据。
         /// </summary>
         private static string CreateConsumerSignature(IEnumerable<string> consumers)
         {
@@ -936,7 +936,7 @@ namespace ZM.Asset
         }
 
         /// <summary>
-        /// 00 根据消费者签名和分片编号创建短小且稳定的自动 Shared Bundle 名称。
+        ///  根据消费者签名和分片编号创建短小且稳定的自动 Shared Bundle 名称。
         /// </summary>
         private string CreateSharedBundleName(string consumerSignature, int shardNumber)
         {
@@ -949,7 +949,7 @@ namespace ZM.Asset
         }
 
         /// <summary>
-        /// 00 按稳定路径顺序和源文件大小上限，将同一消费者组切分成一个或多个 Shared 分片。
+        ///  按稳定路径顺序和源文件大小上限，将同一消费者组切分成一个或多个 Shared 分片。
         /// </summary>
         private List<List<string>> SplitSharedDependenciesBySourceSize(IEnumerable<string> dependencyPaths)
         {
@@ -991,7 +991,7 @@ namespace ZM.Asset
         }
 
         /// <summary>
-        /// 00 获取 Assets/... 资源对应的源文件字节数，并在资源缺失时立即终止构建。
+        ///  获取 Assets/... 资源对应的源文件字节数，并在资源缺失时立即终止构建。
         /// </summary>
         private long GetSourceAssetSize(string assetPath)
         {
@@ -1009,7 +1009,7 @@ namespace ZM.Asset
         }
 
         /// <summary>
-        /// 00 计算一个分片内全部源资源的字节总数，仅用于构建日志和结果审计。
+        ///  计算一个分片内全部源资源的字节总数，仅用于构建日志和结果审计。
         /// </summary>
         private long GetTotalSourceSize(IEnumerable<string> dependencyPaths)
         {
@@ -1091,8 +1091,8 @@ namespace ZM.Asset
         }
 
         /// <summary>
-        /// 00 把业务模块引用的 Shared 资源补充到 Shared 模块构建输入中。
-        /// 00 资源即使不是 Shared 自身的 Entry，也必须拥有物理 Bundle，否则 Unity 会把它隐式复制回业务 Bundle。
+        ///  把业务模块引用的 Shared 资源补充到 Shared 模块构建输入中。
+        ///  资源即使不是 Shared 自身的 Entry，也必须拥有物理 Bundle，否则 Unity 会把它隐式复制回业务 Bundle。
         /// </summary>
         private void BuildExternallyConsumedSharedAssets()
         {
@@ -1250,7 +1250,7 @@ namespace ZM.Asset
         }
 
         /// <summary>
-        /// 00 使用冻结的全局资源位置映射生成当前模块配置。
+        ///  使用冻结的全局资源位置映射生成当前模块配置。
         /// </summary>
         private void WriteAssetBundleConfig(
             IReadOnlyDictionary<string, AssetBundleBuildLocation> globalAssetLocations,
@@ -1375,7 +1375,7 @@ namespace ZM.Asset
         }
 
         /// <summary>
-        /// 00 为当前上下文创建资源路径到物理 Bundle 的稳定位置映射。
+        ///  为当前上下文创建资源路径到物理 Bundle 的稳定位置映射。
         /// </summary>
         internal Dictionary<string, AssetBundleBuildLocation> CreateLocalAssetLocations()
         {
@@ -1567,7 +1567,7 @@ namespace ZM.Asset
         }
 
         /// <summary>
-        /// 00 判断资源物理所有者是否为当前上下文模块，与 Entry 标记无关。
+        ///  判断资源物理所有者是否为当前上下文模块，与 Entry 标记无关。
         /// </summary>
         private bool IsOwnedByCurrentModule(string assetPath)
         {
@@ -1627,7 +1627,7 @@ namespace ZM.Asset
         }
 
         /// <summary>
-        /// 00 保留既有单模块内嵌 API，并转交统一的临时复制、完整校验和原子发布实现。
+        ///  保留既有单模块内嵌 API，并转交统一的临时复制、完整校验和原子发布实现。
         /// </summary>
         public static void CopyBundleToStramingAssets(BundleModuleData moduleData,bool showTips=true)
         {
@@ -1635,7 +1635,7 @@ namespace ZM.Asset
         }
 
         /// <summary>
-        /// 00 将所有选中模块作为一个 StreamingAssets 发布事务；任一模块失败时不会发布其他模块。
+        ///  将所有选中模块作为一个 StreamingAssets 发布事务；任一模块失败时不会发布其他模块。
         /// </summary>
         internal static void CopyBundlesToStreamingAssets(
             IReadOnlyList<BundleModuleData> moduleDataList,
@@ -1758,7 +1758,7 @@ namespace ZM.Asset
         }
 
         /// <summary>
-        /// 00 只根据指定目录内的最终文件生成当前模块清单对象，不产生任何文件系统副作用。
+        ///  只根据指定目录内的最终文件生成当前模块清单对象，不产生任何文件系统副作用。
         /// </summary>
         private HotAssetsManifest CreateHotAssetsManifest(string contentPath)
         {

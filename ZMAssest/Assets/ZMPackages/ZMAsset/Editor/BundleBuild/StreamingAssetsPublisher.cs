@@ -7,8 +7,8 @@ using System.Security.Cryptography;
 namespace ZM.Asset
 {
     /// <summary>
-    /// 00 把多个模块完整复制到同盘临时目录，校验所有文件后再通过一个原子事务切换到 StreamingAssets。
-    /// 00 该类只负责文件系统事务，不读取 Unity 界面状态，便于 EditMode 测试覆盖成功与失败边界。
+    ///  把多个模块完整复制到同盘临时目录，校验所有文件后再通过一个原子事务切换到 StreamingAssets。
+    ///  该类只负责文件系统事务，不读取 Unity 界面状态，便于 EditMode 测试覆盖成功与失败边界。
     /// </summary>
     internal static class StreamingAssetsPublisher
     {
@@ -16,7 +16,7 @@ namespace ZM.Asset
         private const string StagingDirectoryName = ".zmasset-staging";
 
         /// <summary>
-        /// 00 描述一个模块的已构建源目录；模块名决定 StreamingAssets 下的最终目录名。
+        ///  描述一个模块的已构建源目录；模块名决定 StreamingAssets 下的最终目录名。
         /// </summary>
         internal sealed class ModuleSource
         {
@@ -31,7 +31,7 @@ namespace ZM.Asset
         }
 
         /// <summary>
-        /// 00 发布全部模块；任何源目录、复制或校验失败都会发生在正式目录切换之前。
+        ///  发布全部模块；任何源目录、复制或校验失败都会发生在正式目录切换之前。
         /// </summary>
         internal static void Publish(
             IReadOnlyList<ModuleSource> moduleSources,
@@ -100,7 +100,7 @@ namespace ZM.Asset
         }
 
         /// <summary>
-        /// 00 清理当前事务临时目录；清理异常只记录告警，不能覆盖更重要的复制、校验或发布原始异常。
+        ///  清理当前事务临时目录；清理异常只记录告警，不能覆盖更重要的复制、校验或发布原始异常。
         /// </summary>
         private static void CleanupStaging(string transactionRoot, string stagingContainer)
         {
@@ -122,7 +122,7 @@ namespace ZM.Asset
         }
 
         /// <summary>
-        /// 00 规范化模块名和源目录，并冻结待复制文件清单。
+        ///  规范化模块名和源目录，并冻结待复制文件清单。
         /// </summary>
         private static List<ValidatedModuleSource> ValidateSources(IReadOnlyList<ModuleSource> moduleSources)
         {
@@ -157,7 +157,7 @@ namespace ZM.Asset
         }
 
         /// <summary>
-        /// 00 生成按相对路径排序的源文件快照，保证日志、进度和校验结果可复现。
+        ///  生成按相对路径排序的源文件快照，保证日志、进度和校验结果可复现。
         /// </summary>
         private static List<SourceFile> EnumerateFiles(string sourceDirectory)
         {
@@ -171,7 +171,7 @@ namespace ZM.Asset
         }
 
         /// <summary>
-        /// 00 对比源快照和 staging，确保复制过程中没有缺失、额外文件或内容变化。
+        ///  对比源快照和 staging，确保复制过程中没有缺失、额外文件或内容变化。
         /// </summary>
         private static void ValidateStagedModule(ValidatedModuleSource source, string moduleStagingPath)
         {
@@ -199,7 +199,7 @@ namespace ZM.Asset
         }
 
         /// <summary>
-        /// 00 计算文件 SHA-256；流使用顺序扫描并由 using 确定释放，避免大 Bundle 一次性读入内存。
+        ///  计算文件 SHA-256；流使用顺序扫描并由 using 确定释放，避免大 Bundle 一次性读入内存。
         /// </summary>
         private static string ComputeSha256(string filePath)
         {

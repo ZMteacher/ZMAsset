@@ -16,8 +16,8 @@ using Newtonsoft.Json;
 using UnityEngine;
 
 /// <summary>
-/// 00 控制一个资源模块中 Prefab Tab 的统一可主动加载范围。
-/// 00 枚举零值保持旧工程行为，旧序列化配置无需迁移即可默认只开放 Prefab。
+///  控制一个资源模块中 Prefab Tab 的统一可主动加载范围。
+///  枚举零值保持旧工程行为，旧序列化配置无需迁移即可默认只开放 Prefab。
 /// </summary>
 public enum PrefabDependencyEntryMode
 {
@@ -28,7 +28,7 @@ public enum PrefabDependencyEntryMode
 }
 
 /// <summary>
-/// 00 定义资源模块在模块依赖图中的职责；默认业务模块保持旧工程序列化兼容。
+///  定义资源模块在模块依赖图中的职责；默认业务模块保持旧工程序列化兼容。
 /// </summary>
 public enum BundleModuleRole
 {

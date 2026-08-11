@@ -155,19 +155,19 @@ namespace ZM.Asset
             new Dictionary<string, int>(StringComparer.Ordinal);
 
         /// <summary>
-        /// 00 消费模块到直接依赖模块的配置图；图关系在模块初始化提交时一次性替换。
+        ///  消费模块到直接依赖模块的配置图；图关系在模块初始化提交时一次性替换。
         /// </summary>
         private readonly Dictionary<string, HashSet<string>> mModuleDependencies =
             new Dictionary<string, HashSet<string>>(StringComparer.Ordinal);
 
         /// <summary>
-        /// 00 依赖模块到当前活动消费者的租约反向图；Shared 清理依据它拒绝提前释放。
+        ///  依赖模块到当前活动消费者的租约反向图；Shared 清理依据它拒绝提前释放。
         /// </summary>
         private readonly Dictionary<string, HashSet<string>> mActiveModuleDependents =
             new Dictionary<string, HashSet<string>>(StringComparer.Ordinal);
 
         /// <summary>
-        /// 00 标记当前已取得全部依赖租约的模块；成功清理会停用，下一次资源操作再原子激活。
+        ///  标记当前已取得全部依赖租约的模块；成功清理会停用，下一次资源操作再原子激活。
         /// </summary>
         private readonly HashSet<string> mActiveModuleLeases =
             new HashSet<string>(StringComparer.Ordinal);
@@ -303,7 +303,7 @@ namespace ZM.Asset
         }
 
         /// <summary>
-        /// 00 在 mLock 内原子取得当前模块的全部直接依赖租约。
+        ///  在 mLock 内原子取得当前模块的全部直接依赖租约。
         /// </summary>
         private bool TryActivateModuleLeaseLocked(string bundleModule, out string error)
         {
@@ -350,7 +350,7 @@ namespace ZM.Asset
         }
 
         /// <summary>
-        /// 00 在 mLock 内释放当前模块取得的全部依赖租约；重复停用不会重复减租约。
+        ///  在 mLock 内释放当前模块取得的全部依赖租约；重复停用不会重复减租约。
         /// </summary>
         private void DeactivateModuleLeaseLocked(string bundleModule)
         {
@@ -367,7 +367,7 @@ namespace ZM.Asset
         }
 
         /// <summary>
-        /// 00 成功清理业务资源后停用模块租约；调用时 BeginModuleClear 仍持有模块变更锁。
+        ///  成功清理业务资源后停用模块租约；调用时 BeginModuleClear 仍持有模块变更锁。
         /// </summary>
         internal void DeactivateModuleAfterClear(string bundleModule)
         {
@@ -378,7 +378,7 @@ namespace ZM.Asset
         }
 
         /// <summary>
-        /// 00 全局深度清理成功后停用全部模块租约；配置仍保留，下一次加载会按需重新激活。
+        ///  全局深度清理成功后停用全部模块租约；配置仍保留，下一次加载会按需重新激活。
         /// </summary>
         internal void DeactivateAllModulesAfterGlobalClear()
         {
@@ -391,7 +391,7 @@ namespace ZM.Asset
         }
 
         /// <summary>
-        /// 00 判断目标模块当前是否仍被活动消费者租用。
+        ///  判断目标模块当前是否仍被活动消费者租用。
         /// </summary>
         private bool HasActiveDependentsLocked(string bundleModule)
         {
@@ -400,7 +400,7 @@ namespace ZM.Asset
         }
 
         /// <summary>
-        /// 00 判断是否仍有已初始化模块声明依赖目标模块；模块卸载和重载使用更严格的配置级门禁。
+        ///  判断是否仍有已初始化模块声明依赖目标模块；模块卸载和重载使用更严格的配置级门禁。
         /// </summary>
         private bool HasInitializedDependentsLocked(string bundleModule, out string dependentModules)
         {
@@ -416,7 +416,7 @@ namespace ZM.Asset
         }
 
         /// <summary>
-        /// 00 热更新磁盘切换前查询模块是否允许变更配置；有已初始化消费者时必须拒绝 Shared 在线升级。
+        ///  热更新磁盘切换前查询模块是否允许变更配置；有已初始化消费者时必须拒绝 Shared 在线升级。
         /// </summary>
         internal bool CanMutateModuleConfiguration(string bundleModule, out string reason)
         {
@@ -894,7 +894,7 @@ namespace ZM.Asset
         }
 
         /// <summary>
-        /// 00 在 mLock 内移除模块配置、依赖租约和所有公开 Entry；调用方必须已完成活动资源预检。
+        ///  在 mLock 内移除模块配置、依赖租约和所有公开 Entry；调用方必须已完成活动资源预检。
         /// </summary>
         private void RemoveModuleConfigurationLocked(string bundleModule)
         {
@@ -917,7 +917,7 @@ namespace ZM.Asset
         }
 
         /// <summary>
-        /// 00 保存尚未提交的模块配置快照；资源项和模块依赖必须一起原子提交。
+        ///  保存尚未提交的模块配置快照；资源项和模块依赖必须一起原子提交。
         /// </summary>
         private sealed class ParsedModuleConfig
         {
@@ -928,7 +928,7 @@ namespace ZM.Asset
         }
 
         /// <summary>
-        /// 00 反序列化并校验完整配置，返回值尚未写入任何运行时共享字典。
+        ///  反序列化并校验完整配置，返回值尚未写入任何运行时共享字典。
         /// </summary>
         private static ParsedModuleConfig ParseModuleConfig(
             string bundleConfigJson,
@@ -1040,7 +1040,7 @@ namespace ZM.Asset
         }
 
         /// <summary>
-        /// 00 保留原私有解析测试入口，只返回可加载 Entry；正式初始化使用 ParseModuleConfig 同时取得模块图。
+        ///  保留原私有解析测试入口，只返回可加载 Entry；正式初始化使用 ParseModuleConfig 同时取得模块图。
         /// </summary>
         private static Dictionary<uint, BundleItem> ParseBundleItems(
             string bundleConfigJson,
@@ -1050,7 +1050,7 @@ namespace ZM.Asset
         }
 
         /// <summary>
-        /// 00 将新旧协议依赖统一转换为 ModuleBundleKey，并验证跨模块边是否被 moduleDependencies 声明。
+        ///  将新旧协议依赖统一转换为 ModuleBundleKey，并验证跨模块边是否被 moduleDependencies 声明。
         /// </summary>
         private static List<ModuleBundleKey> SanitizeBundleDependencies(
             string ownerModule,
@@ -1847,7 +1847,7 @@ namespace ZM.Asset
         }
 
         /// <summary>
-        /// 00 按完整模块 Bundle 身份对称归还一次引用。
+        ///  按完整模块 Bundle 身份对称归还一次引用。
         /// </summary>
         private void ReleaseAssetBundle(ModuleBundleKey bundleKey, bool unLoad)
         {

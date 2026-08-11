@@ -33,7 +33,7 @@ internal class BundleModuleDrawer
     internal bool IsOpen => isOpen || animation > .001f;
     internal float Animation => animation * animation * (3f - 2f * animation);
     /// <summary>
-    /// 00 宿主据此在弹窗打开时暂停抽屉外点击关闭，保持模态语义。
+    ///  宿主据此在弹窗打开时暂停抽屉外点击关闭，保持模态语义。
     /// </summary>
     internal bool IsConfirmDialogOpen => confirmDeleteVisible;
 
@@ -195,7 +195,7 @@ internal class BundleModuleDrawer
     }
 
     /// <summary>
-    /// 00 绘制控制当前模块全部预制体分包目录的统一资源加载策略和路径列表。
+    ///  绘制控制当前模块全部预制体分包目录的统一资源加载策略和路径列表。
     /// </summary>
     private void DrawPrefabRules()
     {
@@ -384,7 +384,7 @@ internal class BundleModuleDrawer
     private int RuleCount() => (prefabPaths?.Length ?? 0) + (rootPaths?.Length ?? 0) + (bundlePaths?.Length ?? 0) + (singleFilePaths?.Length ?? 0) + (sourcePaths?.Length ?? 0);
 
     /// <summary>
-    /// 00 打开自绘删除确认弹窗，取代 Unity 原生 DisplayDialog，与 ZMAsset 暗色主题统一。
+    ///  打开自绘删除确认弹窗，取代 Unity 原生 DisplayDialog，与 ZMAsset 暗色主题统一。
     /// </summary>
     private void ShowDeleteConfirm()
     {
@@ -393,7 +393,7 @@ internal class BundleModuleDrawer
     }
 
     /// <summary>
-    /// 00 执行持久化删除并关闭抽屉，宿主随后刷新模块列表。
+    ///  执行持久化删除并关闭抽屉，宿主随后刷新模块列表。
     /// </summary>
     private void ConfirmDelete(Action onSaved)
     {
@@ -404,7 +404,7 @@ internal class BundleModuleDrawer
     }
 
     /// <summary>
-    /// 00 在宿主窗口内绘制遮罩与居中确认卡片：点遮罩或 Esc 取消，红色按钮确认删除。
+    ///  在宿主窗口内绘制遮罩与居中确认卡片：点遮罩或 Esc 取消，红色按钮确认删除。
     /// </summary>
     private void DrawConfirmDeleteDialog(EditorWindow owner, Action onSaved)
     {

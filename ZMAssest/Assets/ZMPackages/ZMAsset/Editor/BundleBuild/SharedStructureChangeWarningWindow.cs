@@ -8,7 +8,7 @@ using ZM.Editor;
 namespace ZM.Asset
 {
     /// <summary>
-    /// 00 Shared 严重结构变化专用模态确认窗口，统一使用 ZMAsset 暗色主题和代码矢量图标。
+    ///  Shared 严重结构变化专用模态确认窗口，统一使用 ZMAsset 暗色主题和代码矢量图标。
     /// </summary>
     internal sealed class SharedStructureChangeWarningWindow : EditorWindow
     {
@@ -24,7 +24,7 @@ namespace ZM.Asset
         private Vector2 mDragOffset;
 
         /// <summary>
-        /// 00 无边框 Popup 不能同步阻塞调用栈，因此用独立结果对象让构建枚举器逐帧等待用户选择。
+        ///  无边框 Popup 不能同步阻塞调用栈，因此用独立结果对象让构建枚举器逐帧等待用户选择。
         /// </summary>
         internal sealed class ConfirmationResult
         {
@@ -40,7 +40,7 @@ namespace ZM.Asset
         }
 
         /// <summary>
-        /// 00 显示无原生标题栏的 Popup；构建枚举器通过返回结果逐帧等待，关闭窗口或 Esc 均视为取消。
+        ///  显示无原生标题栏的 Popup；构建枚举器通过返回结果逐帧等待，关闭窗口或 Esc 均视为取消。
         /// </summary>
         internal static ConfirmationResult Show(
             string moduleName,
@@ -203,7 +203,7 @@ namespace ZM.Asset
         }
 
         /// <summary>
-        /// 00 无原生标题栏 Popup 使用自绘头部拖动；关闭按钮区域被排除，避免点击关闭时误触移动。
+        ///  无原生标题栏 Popup 使用自绘头部拖动；关闭按钮区域被排除，避免点击关闭时误触移动。
         /// </summary>
         private void HandleWindowDrag(Rect dragArea)
         {

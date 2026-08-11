@@ -4,8 +4,8 @@ using System.Collections.Generic;
 namespace ZM.Asset
 {
     /// <summary>
-    /// 00 保存一次资源模块构建期间的全部可变状态。
-    /// 00 每次构建必须创建独立上下文，禁止不同模块通过静态字段共享资源列表、输出路径或热更参数。
+    ///  保存一次资源模块构建期间的全部可变状态。
+    ///  每次构建必须创建独立上下文，禁止不同模块通过静态字段共享资源列表、输出路径或热更参数。
     /// </summary>
     internal sealed class ModuleBuildContext
     {
@@ -67,8 +67,8 @@ namespace ZM.Asset
         internal readonly List<SourceBuildEntry> SourceEntries = new List<SourceBuildEntry>();
 
         /// <summary>
-        /// 00 清空所有由资源扫描产生的集合，但保留本次构建参数和输出路径。
-        /// 00 该方法只在上下文首次初始化或明确重新收集时调用，不会影响其他模块。
+        ///  清空所有由资源扫描产生的集合，但保留本次构建参数和输出路径。
+        ///  该方法只在上下文首次初始化或明确重新收集时调用，不会影响其他模块。
         /// </summary>
         internal void ResetCollectedData()
         {
@@ -85,7 +85,7 @@ namespace ZM.Asset
     }
 
     /// <summary>
-    /// 00 描述一个源文件复制规则在本次构建中固定下来的输入和输出信息。
+    ///  描述一个源文件复制规则在本次构建中固定下来的输入和输出信息。
     /// </summary>
     internal sealed class SourceBuildEntry
     {
@@ -100,7 +100,7 @@ namespace ZM.Asset
     }
 
     /// <summary>
-    /// 00 描述一个资源路径在统一构建输入中的真实 Bundle 位置。
+    ///  描述一个资源路径在统一构建输入中的真实 Bundle 位置。
     /// </summary>
     internal readonly struct AssetBundleBuildLocation
     {
@@ -110,7 +110,7 @@ namespace ZM.Asset
         internal readonly string BundleName;
 
         /// <summary>
-        /// 00 创建不可变位置，防止配置写入期间被其他模块改写。
+        ///  创建不可变位置，防止配置写入期间被其他模块改写。
         /// </summary>
         internal AssetBundleBuildLocation(string moduleName, string bundleName)
         {

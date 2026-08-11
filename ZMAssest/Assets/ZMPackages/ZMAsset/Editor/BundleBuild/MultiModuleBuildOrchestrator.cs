@@ -10,8 +10,8 @@ using UnityEngine;
 namespace ZM.Asset
 {
     /// <summary>
-    /// 00 统一编排单模块、多独立模块以及 Business→Shared 构建，所有产物都先进入临时目录再原子发布。
-    /// 00 Shared 只负责扩展依赖闭包；未配置或未依赖 Shared 的工程仍可使用同一事务入口正常构建。
+    ///  统一编排单模块、多独立模块以及 Business→Shared 构建，所有产物都先进入临时目录再原子发布。
+    ///  Shared 只负责扩展依赖闭包；未配置或未依赖 Shared 的工程仍可使用同一事务入口正常构建。
     /// </summary>
     internal static class MultiModuleBuildOrchestrator
     {
@@ -19,7 +19,7 @@ namespace ZM.Asset
         private const string StagingDirectoryName = ".zmasset-staging";
 
         /// <summary>
-        /// 00 构建选中模块；依赖 Shared 即使未勾选也会自动加入构建闭包。
+        ///  构建选中模块；依赖 Shared 即使未勾选也会自动加入构建闭包。
         /// </summary>
         internal static IEnumerator BuildStaged(
             IReadOnlyList<BundleModuleData> selectedModules,
@@ -252,7 +252,7 @@ namespace ZM.Asset
         }
 
         /// <summary>
-        /// 00 同步执行统一构建，供 Unity 批处理门禁复用同一正式入口。
+        ///  同步执行统一构建，供 Unity 批处理门禁复用同一正式入口。
         /// </summary>
         internal static void Build(
             IReadOnlyList<BundleModuleData> selectedModules,
@@ -276,7 +276,7 @@ namespace ZM.Asset
         }
 
         /// <summary>
-        /// 00 过滤空项、拒绝空名称和重复名称，并返回稳定的选中模块快照。
+        ///  过滤空项、拒绝空名称和重复名称，并返回稳定的选中模块快照。
         /// </summary>
         private static List<BundleModuleData> NormalizeSelectedModules(IReadOnlyList<BundleModuleData> selectedModules)
         {
@@ -305,7 +305,7 @@ namespace ZM.Asset
         }
 
         /// <summary>
-        /// 00 从选中模块出发计算直接/传递模块依赖闭包，未勾选 Shared 会被自动补入。
+        ///  从选中模块出发计算直接/传递模块依赖闭包，未勾选 Shared 会被自动补入。
         /// </summary>
         private static List<BundleModuleData> ResolveBuildClosure(
             IReadOnlyList<BundleModuleData> selectedModules,
@@ -351,7 +351,7 @@ namespace ZM.Asset
         }
 
         /// <summary>
-        /// 00 合并资源路径到模块 Bundle 的映射，重复路径即使 Bundle 名相同也拒绝。
+        ///  合并资源路径到模块 Bundle 的映射，重复路径即使 Bundle 名相同也拒绝。
         /// </summary>
         private static Dictionary<string, AssetBundleBuildLocation> MergeAssetLocations(
             IReadOnlyList<BundleModuleData> modules,
@@ -381,7 +381,7 @@ namespace ZM.Asset
         }
 
         /// <summary>
-        /// 00 合并所有模块的 Unity 构建输入，并拒绝跨模块同名 Bundle。
+        ///  合并所有模块的 Unity 构建输入，并拒绝跨模块同名 Bundle。
         /// </summary>
         private static List<AssetBundleBuild> MergeBundleBuilds(
             IReadOnlyList<BundleModuleData> modules,
@@ -410,7 +410,7 @@ namespace ZM.Asset
         }
 
         /// <summary>
-        /// 00 校验收集结果仍遵守物理模块边界；配置 JSON 等框架生成文件没有业务目录拥有者，可安全跳过。
+        ///  校验收集结果仍遵守物理模块边界；配置 JSON 等框架生成文件没有业务目录拥有者，可安全跳过。
         /// </summary>
         private static void ValidateCollectedOwnership(
             IReadOnlyList<BundleModuleData> modules,
@@ -437,7 +437,7 @@ namespace ZM.Asset
         }
 
         /// <summary>
-        /// 00 对显式选择的 Shared 执行结构变化提示；当前工程消费者只作为参考，不参与模块集合计算。
+        ///  对显式选择的 Shared 执行结构变化提示；当前工程消费者只作为参考，不参与模块集合计算。
         /// </summary>
         private static IEnumerator ConfirmSelectedSharedPatchChanges(
             IReadOnlyList<BundleModuleData> selectedModules,
@@ -506,7 +506,7 @@ namespace ZM.Asset
         }
 
         /// <summary>
-        /// 00 为完整资源构建生成模块清单，并登记逐模块正式目录发布项。
+        ///  为完整资源构建生成模块清单，并登记逐模块正式目录发布项。
         /// </summary>
         private static void PrepareFullBuildPublishItems(
             IReadOnlyList<BundleModuleData> buildClosure,
@@ -532,7 +532,7 @@ namespace ZM.Asset
         }
 
         /// <summary>
-        /// 00 为显式选择的模块准备补丁；仅作为业务依赖自动加入的 Shared 继续执行内容不变门禁。
+        ///  为显式选择的模块准备补丁；仅作为业务依赖自动加入的 Shared 继续执行内容不变门禁。
         /// </summary>
         private static void PrepareHotPatchPublishItems(
             IReadOnlyList<BundleModuleData> selectedModules,
@@ -611,7 +611,7 @@ namespace ZM.Asset
         }
 
         /// <summary>
-        /// 00 比较 Shared staging 与现有完整构建基线；忽略普通目录中由构建生成的基线清单。
+        ///  比较 Shared staging 与现有完整构建基线；忽略普通目录中由构建生成的基线清单。
         /// </summary>
         private static bool AreModuleContentsEqual(string stagedPath, string currentPath, string manifestFileName)
         {
@@ -632,7 +632,7 @@ namespace ZM.Asset
         }
 
         /// <summary>
-        /// 00 生成顶层文件名到 MD5 的稳定映射，排除普通构建基线清单。
+        ///  生成顶层文件名到 MD5 的稳定映射，排除普通构建基线清单。
         /// </summary>
         private static Dictionary<string, string> GetComparableFileHashes(string directoryPath, string manifestFileName)
         {
@@ -649,7 +649,7 @@ namespace ZM.Asset
         }
 
         /// <summary>
-        /// 00 复制目录顶层文件到新 staging；模块输出当前没有子目录，发现子目录时明确拒绝。
+        ///  复制目录顶层文件到新 staging；模块输出当前没有子目录，发现子目录时明确拒绝。
         /// </summary>
         private static void CopyTopLevelFiles(string sourcePath, string destinationPath)
         {
@@ -664,7 +664,7 @@ namespace ZM.Asset
         }
 
         /// <summary>
-        /// 00 返回工程根目录下指定输出文件夹的规范绝对路径。
+        ///  返回工程根目录下指定输出文件夹的规范绝对路径。
         /// </summary>
         private static string GetProjectOutputRoot(string folderName)
         {
@@ -672,7 +672,7 @@ namespace ZM.Asset
         }
 
         /// <summary>
-        /// 00 返回普通 AssetBundle 的模块/平台正式目录。
+        ///  返回普通 AssetBundle 的模块/平台正式目录。
         /// </summary>
         private static string GetAssetBundleModuleTarget(string moduleName, UnityEditor.BuildTarget buildTarget)
         {
@@ -683,7 +683,7 @@ namespace ZM.Asset
         }
 
         /// <summary>
-        /// 00 删除当前事务 staging，并校验它确实位于固定临时根目录之下。
+        ///  删除当前事务 staging，并校验它确实位于固定临时根目录之下。
         /// </summary>
         private static void DeleteTransactionStaging(string stagingPath, string assetBundleRoot)
         {
@@ -704,7 +704,7 @@ namespace ZM.Asset
         }
 
         /// <summary>
-        /// 00 保存配置 JSON 与 meta 的构建前状态，用于统一构建失败回滚。
+        ///  保存配置 JSON 与 meta 的构建前状态，用于统一构建失败回滚。
         /// </summary>
         private sealed class ConfigFileSnapshot
         {
@@ -773,7 +773,7 @@ namespace ZM.Asset
         }
 
         /// <summary>
-        /// 00 描述一个待原子切换的文件或目录。
+        ///  描述一个待原子切换的文件或目录。
         /// </summary>
         internal sealed class AtomicPublishItem
         {
@@ -803,7 +803,7 @@ namespace ZM.Asset
         }
 
         /// <summary>
-        /// 00 使用“全部备份 → 全部切换 → 失败全部恢复”发布多个模块和清单。
+        ///  使用“全部备份 → 全部切换 → 失败全部恢复”发布多个模块和清单。
         /// </summary>
         internal static class AtomicPublisher
         {

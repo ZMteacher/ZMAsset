@@ -3,8 +3,8 @@ using System;
 namespace ZM.Asset
 {
     /// <summary>
-    /// 00 唯一标识一个物理 AssetBundle；模块名和 Bundle 名共同参与相等性与哈希计算。
-    /// 00 即使未来不同模块使用相同 Bundle 文件名，缓存、异步任务和释放也不会互相串用。
+    ///  唯一标识一个物理 AssetBundle；模块名和 Bundle 名共同参与相等性与哈希计算。
+    ///  即使未来不同模块使用相同 Bundle 文件名，缓存、异步任务和释放也不会互相串用。
     /// </summary>
     public readonly struct ModuleBundleKey : IEquatable<ModuleBundleKey>
     {
@@ -14,7 +14,7 @@ namespace ZM.Asset
         public readonly string BundleName;
 
         /// <summary>
-        /// 00 创建模块级 Bundle 身份；空值保留为空字符串，正式加载边界会给出明确错误。
+        ///  创建模块级 Bundle 身份；空值保留为空字符串，正式加载边界会给出明确错误。
         /// </summary>
         public ModuleBundleKey(string moduleName, string bundleName)
         {
@@ -23,7 +23,7 @@ namespace ZM.Asset
         }
 
         /// <summary>
-        /// 00 模块名称和 Bundle 名称都使用 Ordinal，保持跨平台可预测且与构建端稳定名称一致。
+        ///  模块名称和 Bundle 名称都使用 Ordinal，保持跨平台可预测且与构建端稳定名称一致。
         /// </summary>
         public bool Equals(ModuleBundleKey other)
         {

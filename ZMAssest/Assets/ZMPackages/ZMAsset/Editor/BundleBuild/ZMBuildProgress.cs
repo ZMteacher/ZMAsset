@@ -139,7 +139,7 @@ internal static class ZMBuildProgress
     internal static bool CancellationRequested => cancelRequested;
 
     /// <summary>
-    /// 00 声明当前原子构建事务包含的实际模块数量；调用方必须在依赖闭包计算完成后调用。
+    ///  声明当前原子构建事务包含的实际模块数量；调用方必须在依赖闭包计算完成后调用。
     /// </summary>
     internal static void SetModuleScope(int moduleCount)
     {
@@ -154,7 +154,7 @@ internal static class ZMBuildProgress
     }
 
     /// <summary>
-    /// 00 在原子发布成功后确认实际完成模块数；发布之前不得调用，避免失败事务误报模块已完成。
+    ///  在原子发布成功后确认实际完成模块数；发布之前不得调用，避免失败事务误报模块已完成。
     /// </summary>
     internal static void CompletePublishedModules(int moduleCount)
     {
@@ -309,7 +309,7 @@ internal static class ZMBuildProgress
     }
 
     /// <summary>
-    /// 00 释放当前 staged 枚举器；Dispose 异常会被记录，但不能阻止进度状态收口或掩盖原始构建异常。
+    ///  释放当前 staged 枚举器；Dispose 异常会被记录，但不能阻止进度状态收口或掩盖原始构建异常。
     /// </summary>
     private static void DisposeCurrentRoutineSafely()
     {

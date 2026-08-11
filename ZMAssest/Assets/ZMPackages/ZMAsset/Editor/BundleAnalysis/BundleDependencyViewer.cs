@@ -316,8 +316,8 @@ namespace ZM.Editor
         }
 
         /// <summary>
-        /// 00 从当前构建流程发布的模块配置 Bundle 读取依赖图。
-        /// 00 配置记录的是直接依赖，本方法再在内存中计算传递依赖，避免依赖旧版 Manifest 文件。
+        ///  从当前构建流程发布的模块配置 Bundle 读取依赖图。
+        ///  配置记录的是直接依赖，本方法再在内存中计算传递依赖，避免依赖旧版 Manifest 文件。
         /// </summary>
         private GameManifestData TryLoadPublishedConfigDependencyGraph(string gameName)
         {
@@ -374,8 +374,8 @@ namespace ZM.Editor
         }
 
         /// <summary>
-        /// 00 根据配置协议 v2 建立“Bundle → 直接依赖 / 全部传递依赖”的只读分析视图。
-        /// 00 同一 Bundle 可承载多个资源，因此必须合并其每条资源记录的依赖，不能只取第一条。
+        ///  根据配置协议 v2 建立“Bundle → 直接依赖 / 全部传递依赖”的只读分析视图。
+        ///  同一 Bundle 可承载多个资源，因此必须合并其每条资源记录的依赖，不能只取第一条。
         /// </summary>
         private static GameManifestData CreateDependencyGraphFromBundleConfig(BundleConfig config, string moduleName)
         {
@@ -436,7 +436,7 @@ namespace ZM.Editor
         }
 
         /// <summary>
-        /// 00 深度优先收集配置中的所有传递依赖；缺失节点保留为叶子，便于显示外部模块的物理 Bundle 依赖。
+        ///  深度优先收集配置中的所有传递依赖；缺失节点保留为叶子，便于显示外部模块的物理 Bundle 依赖。
         /// </summary>
         private static void CollectTransitiveDependencies(
             string bundleName,
@@ -453,7 +453,7 @@ namespace ZM.Editor
         }
 
         /// <summary>
-        /// 00 兼容早期构建输出：只有未发布配置 Bundle 时才尝试读取 Unity AssetBundleManifest。
+        ///  兼容早期构建输出：只有未发布配置 Bundle 时才尝试读取 Unity AssetBundleManifest。
         /// </summary>
         private GameManifestData TryLoadLegacyUnityManifest(string gameName, string platform)
         {

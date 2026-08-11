@@ -35,7 +35,7 @@ namespace ZM.Asset
     }
 
     /// <summary>
-    /// 00 模块配置卸载状态与资源缓存清理状态分离，旧 ClearModuleAssetsAsync 语义保持不变。
+    ///  模块配置卸载状态与资源缓存清理状态分离，旧 ClearModuleAssetsAsync 语义保持不变。
     /// </summary>
     public enum ModuleUnloadStatus
     {
@@ -50,7 +50,7 @@ namespace ZM.Asset
     }
 
     /// <summary>
-    /// 00 描述“清理资源缓存并移除模块配置”的完整卸载结果。
+    ///  描述“清理资源缓存并移除模块配置”的完整卸载结果。
     /// </summary>
     public sealed class ModuleUnloadResult
     {

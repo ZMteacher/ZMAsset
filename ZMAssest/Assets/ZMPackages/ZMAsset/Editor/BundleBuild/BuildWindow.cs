@@ -624,7 +624,7 @@ public partial class BuildWindows : EditorWindow
 }
 
 /// <summary>
-/// 00 集中绘制 Prefab 资源加载策略的双段选择器，两个配置入口共用完全一致的视觉和交互行为。
+///  集中绘制 Prefab 资源加载策略的双段选择器，两个配置入口共用完全一致的视觉和交互行为。
 /// </summary>
 internal static class PrefabDependencyEntryModeUi
 {
@@ -632,7 +632,7 @@ internal static class PrefabDependencyEntryModeUi
     internal static readonly string[] OptionLabels = { "仅开放 Prefab", "开放 Prefab 及其依赖" };
 
     /// <summary>
-    /// 00 使用同一 EditorWindow 内的双段按钮选择策略，不创建 Popup、不转移焦点，也不触发跨窗口 IMGUI 生命周期。
+    ///  使用同一 EditorWindow 内的双段按钮选择策略，不创建 Popup、不转移焦点，也不触发跨窗口 IMGUI 生命周期。
     /// </summary>
     /// <param name="currentMode">当前内存配置；未知值只用于安全显示，不会在用户未点击时被静默覆盖。</param>
     /// <returns>用户本帧选择的新策略；没有点击时原样返回输入值。</returns>
@@ -676,7 +676,7 @@ internal static class PrefabDependencyEntryModeUi
 }
 
 /// <summary>
-/// 00 集中绘制模块角色并执行“最多一个 Shared”保存门禁，主抽屉和兼容窗口共用同一行为。
+///  集中绘制模块角色并执行“最多一个 Shared”保存门禁，主抽屉和兼容窗口共用同一行为。
 /// </summary>
 internal static class BundleModuleRoleUi
 {
@@ -684,7 +684,7 @@ internal static class BundleModuleRoleUi
     private static readonly string[] OptionLabels = { "业务模块", "共享模块" };
 
     /// <summary>
-    /// 00 使用弱强调紧凑双段控件编辑模块角色，不创建 Popup 或额外窗口。
+    ///  使用弱强调紧凑双段控件编辑模块角色，不创建 Popup 或额外窗口。
     /// </summary>
     internal static BundleModuleRole DrawSelector(BundleModuleRole currentRole)
     {
@@ -719,7 +719,7 @@ internal static class BundleModuleRoleUi
     }
 
     /// <summary>
-    /// 00 验证当前保存结果不会让工程出现两个 Shared 模块。
+    ///  验证当前保存结果不会让工程出现两个 Shared 模块。
     /// </summary>
     internal static bool ValidateSingleShared(
         BuildBundleConfigura configuration,

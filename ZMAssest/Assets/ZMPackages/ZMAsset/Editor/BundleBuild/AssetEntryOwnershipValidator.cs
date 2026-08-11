@@ -9,8 +9,8 @@ using UnityEngine;
 namespace ZM.Asset
 {
     /// <summary>
-    /// 00 保存构建期根据真实资源依赖得到的模块依赖图。
-    /// 00 值集合使用模块名称而不是对象引用，便于构建编排和运行时配置生成共享同一协议。
+    ///  保存构建期根据真实资源依赖得到的模块依赖图。
+    ///  值集合使用模块名称而不是对象引用，便于构建编排和运行时配置生成共享同一协议。
     /// </summary>
     internal sealed class ModuleOwnershipAnalysis
     {
@@ -25,7 +25,7 @@ namespace ZM.Asset
             new List<(string moduleName, string assetDirectory)>();
 
         /// <summary>
-        /// 00 登记一条已经通过角色矩阵校验的模块依赖。
+        ///  登记一条已经通过角色矩阵校验的模块依赖。
         /// </summary>
         internal void AddDependency(string consumerModule, string dependencyModule, string dependencyAssetPath)
         {
@@ -61,7 +61,7 @@ namespace ZM.Asset
         }
 
         /// <summary>
-        /// 00 返回稳定排序的直接依赖快照，调用方不能修改内部集合。
+        ///  返回稳定排序的直接依赖快照，调用方不能修改内部集合。
         /// </summary>
         internal IReadOnlyList<string> GetDirectDependencies(string moduleName)
         {
@@ -74,7 +74,7 @@ namespace ZM.Asset
         }
 
         /// <summary>
-        /// 00 返回指定 Shared 模块被业务模块实际消费的全部资源路径快照。
+        ///  返回指定 Shared 模块被业务模块实际消费的全部资源路径快照。
         /// </summary>
         internal IReadOnlyList<string> GetExternallyConsumedAssets(string moduleName)
         {
@@ -89,7 +89,7 @@ namespace ZM.Asset
         }
 
         /// <summary>
-        /// 00 返回一个 Shared 资源对应的业务模块消费者签名。
+        ///  返回一个 Shared 资源对应的业务模块消费者签名。
         /// </summary>
         internal string GetExternalConsumerSignature(string moduleName, string assetPath)
         {
@@ -105,7 +105,7 @@ namespace ZM.Asset
         }
 
         /// <summary>
-        /// 00 登记已经通过非重叠门禁的目录拥有者。
+        ///  登记已经通过非重叠门禁的目录拥有者。
         /// </summary>
         internal void AddDirectoryOwner(string moduleName, string assetDirectory)
         {
@@ -114,7 +114,7 @@ namespace ZM.Asset
         }
 
         /// <summary>
-        /// 00 根据资源物理路径返回唯一所属模块；返回空表示资源无主。
+        ///  根据资源物理路径返回唯一所属模块；返回空表示资源无主。
         /// </summary>
         internal string GetPhysicalOwnerModule(string assetPath)
         {
@@ -131,14 +131,14 @@ namespace ZM.Asset
     }
 
     /// <summary>
-    /// 00 在构建写入任何产物前，校验所有资源模块的物理目录归属和依赖边界。
-    /// 00 资源归属只由文件所在目录决定，与资源最终是否为可主动加载 Entry 无关。
-    /// 00 第三期只允许 Business → Shared；Business → Business 与 Shared → Business 继续作为构建错误。
+    ///  在构建写入任何产物前，校验所有资源模块的物理目录归属和依赖边界。
+    ///  资源归属只由文件所在目录决定，与资源最终是否为可主动加载 Entry 无关。
+    ///  第三期只允许 Business → Shared；Business → Business 与 Shared → Business 继续作为构建错误。
     /// </summary>
     internal static class AssetEntryOwnershipValidator
     {
         /// <summary>
-        /// 00 单次最多展示的违规数量，避免错误窗口因历史工程问题过多而失去可读性。
+        ///  单次最多展示的违规数量，避免错误窗口因历史工程问题过多而失去可读性。
         /// </summary>
         private const int MaxReportedViolationCount = 50;
 
@@ -154,7 +154,7 @@ namespace ZM.Asset
         }
 
         /// <summary>
-        /// 00 保存规则直接选中的资源以及是否需要交给 Unity 解析依赖。
+        ///  保存规则直接选中的资源以及是否需要交给 Unity 解析依赖。
         /// </summary>
         private sealed class ExplicitAsset
         {
@@ -167,7 +167,7 @@ namespace ZM.Asset
         }
 
         /// <summary>
-        /// 00 保存显式资源的唯一配置归属，用于同时拒绝同模块规则重叠和跨模块重复配置。
+        ///  保存显式资源的唯一配置归属，用于同时拒绝同模块规则重叠和跨模块重复配置。
         /// </summary>
         private sealed class EntryOwner
         {
@@ -176,7 +176,7 @@ namespace ZM.Asset
         }
 
         /// <summary>
-        /// 00 描述一条依赖边界违规；依赖链仅在确认违规以后惰性计算。
+        ///  描述一条依赖边界违规；依赖链仅在确认违规以后惰性计算。
         /// </summary>
         private sealed class DependencyViolation
         {
@@ -187,8 +187,8 @@ namespace ZM.Asset
         }
 
         /// <summary>
-        /// 00 校验全部已配置模块以及本次目标模块，不受 isBuild 开关影响。
-        /// 00 校验发生在旧构建目录被清理之前，失败时不会破坏上一次可用产物。
+        ///  校验全部已配置模块以及本次目标模块，不受 isBuild 开关影响。
+        ///  校验发生在旧构建目录被清理之前，失败时不会破坏上一次可用产物。
         /// </summary>
         /// <param name="targetModule">本次准备构建的资源模块。</param>
         /// <exception cref="InvalidOperationException">模块名称、物理归属、依赖边界或 CRC 发生冲突。</exception>
@@ -199,7 +199,7 @@ namespace ZM.Asset
         }
 
         /// <summary>
-        /// 00 校验全部模块物理归属并返回允许的跨模块依赖图，供统一构建编排器消费。
+        ///  校验全部模块物理归属并返回允许的跨模块依赖图，供统一构建编排器消费。
         /// </summary>
         internal static ModuleOwnershipAnalysis AnalyzeBeforeBuild(IEnumerable<BundleModuleData> targetModules)
         {
@@ -293,7 +293,7 @@ namespace ZM.Asset
         }
 
         /// <summary>
-        /// 00 为显式选择的 Shared 收集当前工程全部 Business 消费者，保证 Shared 独立构建输入保持完整。
+        ///  为显式选择的 Shared 收集当前工程全部 Business 消费者，保证 Shared 独立构建输入保持完整。
         /// </summary>
         private static void CollectSelectedSharedConsumers(
             IReadOnlyList<BundleModuleData> targetModules,
@@ -333,7 +333,7 @@ namespace ZM.Asset
         }
 
         /// <summary>
-        /// 00 收集配置中的所有有效模块，并确保本次目标模块即使尚未保存也能参与校验。
+        ///  收集配置中的所有有效模块，并确保本次目标模块即使尚未保存也能参与校验。
         /// </summary>
         private static List<BundleModuleData> CollectModules(IReadOnlyCollection<BundleModuleData> targetModules)
         {
@@ -380,7 +380,7 @@ namespace ZM.Asset
         }
 
         /// <summary>
-        /// 00 收集一个模块的物理拥有目录和规则直接选中的资源。
+        ///  收集一个模块的物理拥有目录和规则直接选中的资源。
         /// </summary>
         private static void CollectModuleDefinition(
             BundleModuleData module,
@@ -530,7 +530,7 @@ namespace ZM.Asset
         }
 
         /// <summary>
-        /// 00 登记一条模块物理目录配置；是否重叠在完整收集后统一判断。
+        ///  登记一条模块物理目录配置；是否重叠在完整收集后统一判断。
         /// </summary>
         private static void RegisterDirectoryOwner(
             string moduleName,
@@ -550,7 +550,7 @@ namespace ZM.Asset
         }
 
         /// <summary>
-        /// 00 根据“全局模块资源总目录/模块名称”解析约定物理根目录；返回空表示旧模块尚未迁移到同名目录。
+        ///  根据“全局模块资源总目录/模块名称”解析约定物理根目录；返回空表示旧模块尚未迁移到同名目录。
         /// </summary>
         private static string TryResolveConventionalModuleRoot(string moduleName)
         {
@@ -578,7 +578,7 @@ namespace ZM.Asset
         }
 
         /// <summary>
-        /// 00 校验收集规则必须位于约定模块根目录内；旧目录结构未迁移时由规则目录临时承担物理归属。
+        ///  校验收集规则必须位于约定模块根目录内；旧目录结构未迁移时由规则目录临时承担物理归属。
         /// </summary>
         private static void RegisterRuleDirectoryOwnership(
             string moduleName,
@@ -613,7 +613,7 @@ namespace ZM.Asset
         }
 
         /// <summary>
-        /// 00 按实际构建规则递归收集目录中的文件，并登记其显式 Entry 和依赖检查要求。
+        ///  按实际构建规则递归收集目录中的文件，并登记其显式 Entry 和依赖检查要求。
         /// </summary>
         private static void CollectDirectoryAssets(
             string moduleName,
@@ -645,7 +645,7 @@ namespace ZM.Asset
         }
 
         /// <summary>
-        /// 00 登记规则直接选中的资源，并保持旧校验器的 Entry 与 CRC 安全约束。
+        ///  登记规则直接选中的资源，并保持旧校验器的 Entry 与 CRC 安全约束。
         /// </summary>
         private static void RegisterExplicitAsset(
             string moduleName,
@@ -686,7 +686,7 @@ namespace ZM.Asset
         }
 
         /// <summary>
-        /// 00 把一个最终可主动加载的资源路径登记到全局 CRC 索引门禁。
+        ///  把一个最终可主动加载的资源路径登记到全局 CRC 索引门禁。
         /// </summary>
         private static void RegisterLoadableEntryCrc(string assetPath, Dictionary<uint, string> crcPaths)
         {
@@ -706,7 +706,7 @@ namespace ZM.Asset
         }
 
         /// <summary>
-        /// 00 拒绝完全相同或任意方向嵌套的配置目录，确保每个物理文件最多只有一个拥有者。
+        ///  拒绝完全相同或任意方向嵌套的配置目录，确保每个物理文件最多只有一个拥有者。
         /// </summary>
         private static void ValidateDirectoryOwnership(List<DirectoryOwner> directoryOwners)
         {
@@ -743,7 +743,7 @@ namespace ZM.Asset
         }
 
         /// <summary>
-        /// 00 使用目录边界判断相等或嵌套关系，避免 GameA 与 GameAB 之间产生错误前缀命中。
+        ///  使用目录边界判断相等或嵌套关系，避免 GameA 与 GameAB 之间产生错误前缀命中。
         /// </summary>
         private static bool DirectoriesOverlap(string leftDirectory, string rightDirectory)
         {
@@ -756,7 +756,7 @@ namespace ZM.Asset
         }
 
         /// <summary>
-        /// 00 检查所有 AssetBundle 显式资源的递归依赖是否仍位于本模块拥有目录中。
+        ///  检查所有 AssetBundle 显式资源的递归依赖是否仍位于本模块拥有目录中。
         /// </summary>
         private static void ValidateDependencyOwnership(
             List<ExplicitAsset> explicitAssets,
@@ -864,7 +864,7 @@ namespace ZM.Asset
         }
 
         /// <summary>
-        /// 00 根据资源的物理 Assets 路径查找唯一目录拥有者，与 Entry 状态完全无关。
+        ///  根据资源的物理 Assets 路径查找唯一目录拥有者，与 Entry 状态完全无关。
         /// </summary>
         private static DirectoryOwner FindPhysicalOwner(string assetPath, List<DirectoryOwner> directoryOwners)
         {
@@ -875,7 +875,7 @@ namespace ZM.Asset
         }
 
         /// <summary>
-        /// 00 仅在命中违规后，通过 direct dependencies BFS 还原入口到违规资源的一条最短依赖链。
+        ///  仅在命中违规后，通过 direct dependencies BFS 还原入口到违规资源的一条最短依赖链。
         /// </summary>
         private static IReadOnlyList<string> FindDependencyChain(
             string sourcePath,
@@ -919,7 +919,7 @@ namespace ZM.Asset
         }
 
         /// <summary>
-        /// 00 读取并缓存一个资源的直接可打包依赖。
+        ///  读取并缓存一个资源的直接可打包依赖。
         /// </summary>
         private static IReadOnlyList<string> GetDirectDependencies(
             string assetPath,
@@ -943,7 +943,7 @@ namespace ZM.Asset
         }
 
         /// <summary>
-        /// 00 使用父节点字典从违规目标反向回溯并得到正向依赖链。
+        ///  使用父节点字典从违规目标反向回溯并得到正向依赖链。
         /// </summary>
         private static IReadOnlyList<string> RebuildDependencyChain(
             string targetPath,
@@ -969,7 +969,7 @@ namespace ZM.Asset
         }
 
         /// <summary>
-        /// 00 把多条违规组织成包含归属、规则、依赖链和修复建议的构建错误。
+        ///  把多条违规组织成包含归属、规则、依赖链和修复建议的构建错误。
         /// </summary>
         private static string BuildViolationMessage(List<DependencyViolation> violations)
         {
@@ -1022,7 +1022,7 @@ namespace ZM.Asset
         }
 
         /// <summary>
-        /// 00 验证配置目录存在且位于当前 Unity 工程 Assets 下，并返回规范资源目录路径。
+        ///  验证配置目录存在且位于当前 Unity 工程 Assets 下，并返回规范资源目录路径。
         /// </summary>
         private static string ResolveAssetDirectory(string moduleName, string configuredPath, string ruleName)
         {
@@ -1053,7 +1053,7 @@ namespace ZM.Asset
         }
 
         /// <summary>
-        /// 00 将磁盘路径转换为当前 Unity 工程内的 Assets/... 路径。
+        ///  将磁盘路径转换为当前 Unity 工程内的 Assets/... 路径。
         /// </summary>
         private static string ToAssetPath(string moduleName, string path)
         {
@@ -1069,7 +1069,7 @@ namespace ZM.Asset
         }
 
         /// <summary>
-        /// 00 将 Assets/... 资源路径转换为可供 System.IO 使用的绝对路径。
+        ///  将 Assets/... 资源路径转换为可供 System.IO 使用的绝对路径。
         /// </summary>
         private static string ToFullPath(string assetPath)
         {
@@ -1080,7 +1080,7 @@ namespace ZM.Asset
         }
 
         /// <summary>
-        /// 00 判断 AssetDatabase 返回的路径是否属于项目内可打进 AssetBundle 的资源。
+        ///  判断 AssetDatabase 返回的路径是否属于项目内可打进 AssetBundle 的资源。
         /// </summary>
         private static bool IsBundleableAssetPath(string path)
         {
@@ -1092,7 +1092,7 @@ namespace ZM.Asset
         }
 
         /// <summary>
-        /// 00 统一资源路径分隔符并移除无意义的前导斜杠。
+        ///  统一资源路径分隔符并移除无意义的前导斜杠。
         /// </summary>
         private static string NormalizeAssetPath(string path)
         {

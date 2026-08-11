@@ -5,7 +5,7 @@ using System.Linq;
 namespace ZM.Asset
 {
     /// <summary>
-    /// 00 Shared 补丁配置变化等级；这里只分析资源身份和依赖结构，不推测线上业务兼容性。
+    ///  Shared 补丁配置变化等级；这里只分析资源身份和依赖结构，不推测线上业务兼容性。
     /// </summary>
     internal enum SharedPatchChangeSeverity
     {
@@ -15,7 +15,7 @@ namespace ZM.Asset
     }
 
     /// <summary>
-    /// 00 Shared 结构变化报告仅用于构建提示，绝不自动修改开发者选择的补丁模块集合。
+    ///  Shared 结构变化报告仅用于构建提示，绝不自动修改开发者选择的补丁模块集合。
     /// </summary>
     internal sealed class SharedPatchChangeReport
     {
@@ -30,7 +30,7 @@ namespace ZM.Asset
     }
 
     /// <summary>
-    /// 00 对比 Shared 新旧 BundleConfig，识别新增资源与会破坏旧资源身份的严重结构变化。
+    ///  对比 Shared 新旧 BundleConfig，识别新增资源与会破坏旧资源身份的严重结构变化。
     /// </summary>
     internal static class SharedPatchChangeAnalyzer
     {
