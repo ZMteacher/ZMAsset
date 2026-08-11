@@ -2,7 +2,7 @@ using System;
 using System.Threading.Tasks;
 using Cysharp.Threading.Tasks;
 
-namespace ZM.ZMAsset
+namespace ZM.Asset
 {
     /// <summary>
     /// Native 下载服务。批量下载继续委托 AssetsDownLoader，单文件下载继续委托 DownLoadThread。

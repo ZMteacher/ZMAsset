@@ -15,7 +15,7 @@ using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
 
-namespace ZM.ZMAsset
+namespace ZM.Asset
 {
     public partial class ZMAsset : MonoSingleton<ZMAsset>
     {
@@ -76,6 +76,7 @@ namespace ZM.ZMAsset
                 //初始化资源管理器
                 mResource.Initlizate();
                 Debug.Log("ZMAsset Initialize Success!");
+                LogRuntimeModes();
             }
             catch
             {
@@ -83,6 +84,25 @@ namespace ZM.ZMAsset
                 mIsInitialized = false;
                 throw;
             }
+        }
+
+        /// <summary>
+        /// 在框架初始化完成后输出本次运行采用的资源策略，便于快速识别 Editor/AssetBundle 与热更配置。
+        /// </summary>
+        private static void LogRuntimeModes()
+        {
+            BundleSettings settings = BundleSettings.Instance;
+            string loadMode = settings == null ? "<color=#FF5252><b>Missing</b></color>" :
+                $"<color=#FFD740><b>{settings.loadAssetType}</b></color>";
+            string hotUpdateMode = settings == null ? "<color=#FF5252><b>Missing</b></color>" :
+                $"<color=#FFD740><b>{settings.bundleHotType}</b></color>";
+
+            Debug.Log(
+                "<color=#00E5FF><b>━━━━━━━━━━ ZMAsset Ready ━━━━━━━━━━</b></color>\n" +
+
+                $"<color=#F5F5F5><b>资源加载模式：</b></color>{loadMode}    " +
+                $"<color=#F5F5F5><b>热更模式：</b></color>{hotUpdateMode}    ");
+
         }
  
 

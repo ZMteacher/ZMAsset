@@ -13,7 +13,7 @@
 using System.IO;
 using System.Text;
 
-namespace ZM.ZMAsset
+namespace ZM.Asset
 {
     public class MD5
     {

@@ -1,7 +1,7 @@
 using System;
 using System.Collections.Generic;
 
-namespace ZM.ZMAsset
+namespace ZM.Asset
 {
     /// <summary>
     /// 00 保存一次资源模块构建期间的全部可变状态。
@@ -55,6 +55,10 @@ namespace ZM.ZMAsset
         internal readonly List<UnityEditor.AssetBundleBuild> BundleBuilds =
             new List<UnityEditor.AssetBundleBuild>();
 
+        //00 WebGL CRC 必须在 Unity 原始构建目录仍保留伴随 manifest 时冻结；模块 staging 不再重复解析 Bundle。
+        internal readonly Dictionary<string, uint> WebGlBundleCrcs =
+            new Dictionary<string, uint>(StringComparer.OrdinalIgnoreCase);
+
         //00 显式 Entry 来源必须在规则收集时保留，配置写入阶段不能从 Bundle 列表反推。
         internal readonly HashSet<string> ExplicitEntryPaths =
             new HashSet<string>(StringComparer.Ordinal);
@@ -74,6 +78,7 @@ namespace ZM.ZMAsset
             PrefabBundles.Clear();
             SingleFileBundles.Clear();
             BundleBuilds.Clear();
+            WebGlBundleCrcs.Clear();
             ExplicitEntryPaths.Clear();
             SourceEntries.Clear();
         }

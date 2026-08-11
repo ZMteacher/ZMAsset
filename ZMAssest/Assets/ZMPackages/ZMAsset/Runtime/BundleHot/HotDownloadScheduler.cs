@@ -1,7 +1,7 @@
 using System;
 using System.Collections.Generic;
 
-namespace ZM.ZMAsset
+namespace ZM.Asset
 {
     /// <summary>
     /// 统一管理所有热更新模块共享的下载线程预算。

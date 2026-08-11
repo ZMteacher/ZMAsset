@@ -1,6 +1,6 @@
 ﻿using UnityEngine;
 using UnityEditor;
-using ZM.ZMAsset;
+using ZM.Asset;
 
 public class OriginDataEditor
 {

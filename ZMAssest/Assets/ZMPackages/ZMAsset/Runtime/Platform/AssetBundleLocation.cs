@@ -1,4 +1,4 @@
-namespace ZM.ZMAsset
+namespace ZM.Asset
 {
     /// <summary>
     /// 标识 AssetBundle 当前来自内嵌目录、热更目录还是远端地址。

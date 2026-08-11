@@ -16,7 +16,7 @@ MonoBehaviour:
   - bundleid: 0
     moduleName: RemoteAsset
     isAddressableAsset: 1
-    isBuild: 1
+    isBuild: 0
     moduleRole: 0
     isAddModule: 0
     lastClickBtnTime: 1519.015
@@ -45,7 +45,7 @@ MonoBehaviour:
   - bundleid: 0
     moduleName: GameOne
     isAddressableAsset: 0
-    isBuild: 0
+    isBuild: 1
     moduleRole: 0
     isAddModule: 0
     lastClickBtnTime: 0
@@ -55,7 +55,8 @@ MonoBehaviour:
     rootFolderPathArr: []
     signFolderPathArr: []
     sourceFolderPathArr: []
-    singleFilePathArr: []
+    singleFilePathArr:
+    - Assets/GameData/GameOne/Fonts
   - bundleid: 0
     moduleName: GameTow
     isAddressableAsset: 0

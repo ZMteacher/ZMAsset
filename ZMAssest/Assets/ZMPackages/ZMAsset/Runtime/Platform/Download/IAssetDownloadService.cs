@@ -4,7 +4,7 @@ using System.Threading.Tasks;
 using System.Threading;
 using Cysharp.Threading.Tasks;
 
-namespace ZM.ZMAsset
+namespace ZM.Asset
 {
     /// <summary>
     /// 描述一个热更新下载批次。队列顺序由上层确定，下载服务只负责并发、重试、取消和回调派发。

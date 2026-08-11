@@ -6,7 +6,7 @@ using System.Text;
 using UnityEditor;
 using UnityEngine;
 
-namespace ZM.ZMAsset
+namespace ZM.Asset
 {
     /// <summary>
     /// 00 保存构建期根据真实资源依赖得到的模块依赖图。

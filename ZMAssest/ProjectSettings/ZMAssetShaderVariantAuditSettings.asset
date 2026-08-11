@@ -1,0 +1,22 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &1
+MonoBehaviour:
+  m_ObjectHideFlags: 53
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 536a5b1ec66ec804a85d2f514b8ac35d, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  m_IsEnabled: 1
+  m_ReportDirectory: BuildArtifacts/ShaderVariantAudit
+  m_MaxDetailedVariants: 100000
+  m_ActiveProfileName: Default
+  m_IncludeGeneratedCollections: 1
+  m_RequireUpToDateCollection: 0
+  m_StrippingMode: 0
+  m_ExplicitRules: []

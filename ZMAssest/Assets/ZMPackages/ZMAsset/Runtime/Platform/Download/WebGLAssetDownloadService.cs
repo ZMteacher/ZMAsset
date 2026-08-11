@@ -6,7 +6,7 @@ using Cysharp.Threading.Tasks;
 using UnityEngine;
 using UnityEngine.Networking;
 
-namespace ZM.ZMAsset
+namespace ZM.Asset
 {
     /// <summary>
     /// WebGL RemoteAsset 与事务热更新下载服务。Bundle 直接进入 Unity/浏览器缓存，不复制到托管字节数组或桌面文件目录。

@@ -4,7 +4,7 @@ using System.Runtime.InteropServices;
 using Cysharp.Threading.Tasks;
 using Newtonsoft.Json;
 
-namespace ZM.ZMAsset
+namespace ZM.Asset
 {
     /// <summary>
     /// Stores small WebGL metadata records in the project-owned IndexedDB database.

@@ -13,7 +13,7 @@
 
 using UnityEngine;
 
-namespace ZM.ZMAsset
+namespace ZM.Asset
 {
     public abstract class MonoSingleton<T> : MonoBehaviour where T : MonoSingleton<T>
     {

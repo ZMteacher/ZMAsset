@@ -21,7 +21,7 @@ using Cysharp.Threading.Tasks;
 using UnityEngine;
 using UnityEngine.Networking;
 
-namespace ZM.ZMAsset
+namespace ZM.Asset
  {
 	
 	public class AES

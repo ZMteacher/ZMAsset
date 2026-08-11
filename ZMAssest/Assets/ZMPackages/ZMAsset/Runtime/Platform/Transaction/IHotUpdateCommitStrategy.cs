@@ -1,6 +1,6 @@
 using System;
 
-namespace ZM.ZMAsset
+namespace ZM.Asset
 {
     /// <summary>
     /// 把已经准备并校验的候选版本切换为业务可见版本。

@@ -4,7 +4,7 @@ using System.IO;
 using System.Linq;
 using System.Security.Cryptography;
 
-namespace ZM.ZMAsset
+namespace ZM.Asset
 {
     /// <summary>
     /// 00 把多个模块完整复制到同盘临时目录，校验所有文件后再通过一个原子事务切换到 StreamingAssets。

@@ -3,7 +3,7 @@ using System.Threading;
 using Cysharp.Threading.Tasks;
 using UnityEngine;
 using UnityEngine.UI;
-using ZM.ZMAsset;
+using ZM.Asset;
 
 public class RemoteAssetDemo : MonoBehaviour
 {

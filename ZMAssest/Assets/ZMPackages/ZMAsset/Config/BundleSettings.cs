@@ -18,7 +18,7 @@ using System.Reflection;
 using UnityEditor;
 #endif
 using UnityEngine;
-using ZM.ZMAsset;
+using ZM.Asset;
 /// <summary>
 /// AssetBundle热更模式
 /// </summary>

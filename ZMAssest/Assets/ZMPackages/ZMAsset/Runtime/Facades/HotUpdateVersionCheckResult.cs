@@ -1,6 +1,6 @@
 using System;
 
-namespace ZM.ZMAsset
+namespace ZM.Asset
 {
     /// <summary>
     /// 资源版本检查的最终状态。

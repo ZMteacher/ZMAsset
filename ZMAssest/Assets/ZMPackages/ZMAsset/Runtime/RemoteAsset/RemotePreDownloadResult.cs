@@ -1,6 +1,6 @@
 using System.Collections.Generic;
 
-namespace ZM.ZMAsset
+namespace ZM.Asset
 {
     /// <summary>
     /// 远端资源预下载结果。预下载是闲时任务：单个文件失败不中断其余文件，最终结果聚合反馈。

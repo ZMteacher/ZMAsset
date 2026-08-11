@@ -4,7 +4,7 @@ using System.IO;
 using Cysharp.Threading.Tasks;
 using Newtonsoft.Json;
 
-namespace ZM.ZMAsset
+namespace ZM.Asset
 {
     /// <summary>
     /// WebGL transaction strategy. Candidate manifests are durable metadata records and one

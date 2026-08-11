@@ -17,7 +17,7 @@ using Cysharp.Threading.Tasks;
 using UnityEngine;
 using UnityEngine.SceneManagement;
 
-namespace ZM.ZMAsset
+namespace ZM.Asset
 {
     public interface IResourceInterface
     {

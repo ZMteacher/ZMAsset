@@ -19,7 +19,7 @@ using System.Threading;
 using Cysharp.Threading.Tasks;
 using UnityEngine;
 
-namespace ZM.ZMAsset
+namespace ZM.Asset
 {
     public class BundleItem
     {

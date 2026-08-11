@@ -2,7 +2,7 @@ using System.IO;
 using Cysharp.Threading.Tasks;
 using UnityEngine;
 
-namespace ZM.ZMAsset
+namespace ZM.Asset
 {
     /// <summary>
     /// Native 平台 Bundle 加载器。

@@ -12,7 +12,7 @@ using UnityEngine;
 * Modify: 
  *
  * ********************************************/ 
-namespace ZM.ZMAsset
+namespace ZM.Asset
  {
 	
 	public class UIOriginData : OriginData

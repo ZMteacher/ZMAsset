@@ -5,7 +5,7 @@ using Cysharp.Threading.Tasks;
 using UnityEngine;
 using System.Threading;
 
-namespace ZM.ZMAsset
+namespace ZM.Asset
 {
     /// <summary>
     /// 单个物理 Bundle 的内部本地状态；公共 API 只暴露聚合后的资源级状态。

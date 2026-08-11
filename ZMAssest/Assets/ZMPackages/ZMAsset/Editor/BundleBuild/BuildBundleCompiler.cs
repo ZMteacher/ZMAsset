@@ -14,13 +14,14 @@ using Newtonsoft.Json;
 using System;
 using System.Collections;
 using System.Collections.Generic;
+using System.Globalization;
 using System.IO;
 using System.Linq;
 using Cysharp.Threading.Tasks;
 using UnityEditor;
 using UnityEngine;
 
-namespace ZM.ZMAsset
+namespace ZM.Asset
 {
     public enum BuildType
     {
@@ -92,6 +93,11 @@ namespace ZM.ZMAsset
         /// 要打包的Bundle资产数组
         /// </summary>
         private List<AssetBundleBuild> mBundleBuildList => mContext.BundleBuilds;
+
+        /// <summary>
+        /// WebGL Bundle 名称到 Unity 构建 CRC 的冻结快照；CRC 在 raw 输出仍完整时采集，发布清单只消费快照。
+        /// </summary>
+        private Dictionary<string, uint> mWebGlBundleCrcs => mContext.WebGlBundleCrcs;
 
         /// <summary>
         /// 由打包规则直接选中的可加载入口路径，
@@ -181,11 +187,11 @@ namespace ZM.ZMAsset
                     sharedStagingPath,
                     false))
                 throw new InvalidOperationException($"模块 {moduleData?.moduleName} 初始化失败。");
-            //00 各规则仍按原顺序收集，保证单模块输入列表和既有算法一致。
+            //00 用户显式声明的单文件包先于 Prefab 自动依赖分配，让 Prefab 只建立跨 Bundle 依赖而不重复收纳资源。
             BuildAllFolder();
             BuildRootSubFolder();
-            BuildAllPrefabs();
             BuildAllSingleFiles();
+            BuildAllPrefabs();
             //00 统一构建只有在 Shared 上下文接管全部外部引用后，才能真正形成跨模块 Bundle 依赖。
             BuildExternallyConsumedSharedAssets();
             CollectSourceEntries();
@@ -235,6 +241,10 @@ namespace ZM.ZMAsset
 
             //00 一个 Bundle 名称只复制一次，防止异常重复 Build 项覆盖后掩盖构建输入问题。
             HashSet<string> copiedBundleNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            UnityEditor.BuildTarget materializedTarget = mBuildTarget == UnityEditor.BuildTarget.NoTarget
+                ? EditorUserBuildSettings.activeBuildTarget
+                : mBuildTarget;
+            mWebGlBundleCrcs.Clear();
             foreach (AssetBundleBuild bundleBuild in mBundleBuildList)
             {
                 //00 Unity Bundle 名称为空属于内部构建列表错误，必须给出模块上下文。
@@ -258,6 +268,12 @@ namespace ZM.ZMAsset
                     throw new FileNotFoundException(
                         $"模块 {_mBundleModuleName} 的 Bundle 未由 Unity 生成：{bundleBuild.assetBundleName}",
                         sourcePath);
+                //00 WebGL 下载校验 CRC 必须来自 Unity 原始 Bundle。此时 companion manifest 尚未被 staging 边界排除，
+                //00 可在 Unity API 无法直接解析文件时使用构建清单中的权威 CRC 回退。
+                if (materializedTarget == UnityEditor.BuildTarget.WebGL)
+                    mWebGlBundleCrcs.Add(
+                        bundleBuild.assetBundleName,
+                        ResolveWebGlBundleCrc(sourcePath));
                 //00 staging 是新目录，可直接复制并保留最终文件名。
                 File.Copy(sourcePath, destinationPath, false);
             }
@@ -297,6 +313,84 @@ namespace ZM.ZMAsset
             string json = JsonConvert.SerializeObject(manifest, Formatting.Indented);
             //00 现有 FileHelper 写入使用 UTF-8，统一构建保持相同编码。
             return System.Text.Encoding.UTF8.GetBytes(json);
+        }
+
+        /// <summary>
+        /// 读取 Unity WebGL Bundle 的校验 CRC。优先使用 Unity API；当 API 无法解析时，严格读取同次构建生成的
+        /// companion manifest。禁止用文件 MD5 截断或 CRC=0 代替真实 Bundle CRC。
+        /// </summary>
+        internal static uint ResolveWebGlBundleCrc(string bundlePath)
+        {
+            if (string.IsNullOrWhiteSpace(bundlePath))
+                throw new ArgumentException("WebGL AssetBundle 路径不能为空。", nameof(bundlePath));
+
+            string normalizedBundlePath = Path.GetFullPath(bundlePath);
+            if (!File.Exists(normalizedBundlePath))
+                throw new FileNotFoundException("无法计算 WebGL AssetBundle CRC，文件不存在。", normalizedBundlePath);
+
+            Exception unityApiException = null;
+            try
+            {
+                if (BuildPipeline.GetCRCForAssetBundle(normalizedBundlePath, out uint crc))
+                    return crc;
+            }
+            catch (Exception exception) when (
+                exception is ArgumentException ||
+                exception is InvalidOperationException ||
+                exception is IOException ||
+                exception is UnityException)
+            {
+                // Unity API 的平台或文件解析异常不应遮蔽同次构建生成的 companion manifest 回退路径。
+                unityApiException = exception;
+            }
+
+            string manifestPath = normalizedBundlePath + ".manifest";
+            if (!File.Exists(manifestPath))
+                throw new InvalidDataException(
+                    $"无法计算 WebGL AssetBundle CRC，Unity API 返回失败且缺少伴随清单：{manifestPath}",
+                    unityApiException);
+
+            try
+            {
+                return ParseBundleCrcFromManifest(File.ReadAllText(manifestPath));
+            }
+            catch (Exception exception) when (exception is IOException || exception is InvalidDataException)
+            {
+                throw new InvalidDataException(
+                    $"无法计算 WebGL AssetBundle CRC，伴随清单无效：{manifestPath}",
+                    exception);
+            }
+        }
+
+        /// <summary>
+        /// 从 Unity 生成的单 Bundle manifest 中读取唯一 CRC 字段。
+        /// </summary>
+        internal static uint ParseBundleCrcFromManifest(string manifestContents)
+        {
+            if (string.IsNullOrWhiteSpace(manifestContents))
+                throw new InvalidDataException("AssetBundle manifest 内容为空。");
+
+            uint? parsedCrc = null;
+            using (StringReader reader = new StringReader(manifestContents))
+            {
+                string line;
+                while ((line = reader.ReadLine()) != null)
+                {
+                    string trimmedLine = line.Trim();
+                    if (!trimmedLine.StartsWith("CRC:", StringComparison.Ordinal)) continue;
+                    if (parsedCrc.HasValue)
+                        throw new InvalidDataException("AssetBundle manifest 包含重复 CRC 字段。");
+
+                    string value = trimmedLine.Substring("CRC:".Length).Trim();
+                    if (!uint.TryParse(value, NumberStyles.None, CultureInfo.InvariantCulture, out uint crc))
+                        throw new InvalidDataException($"AssetBundle manifest CRC 不是有效 UInt32：{value}");
+                    parsedCrc = crc;
+                }
+            }
+
+            if (!parsedCrc.HasValue)
+                throw new InvalidDataException("AssetBundle manifest 缺少 CRC 字段。");
+            return parsedCrc.Value;
         }
 
         /// <summary>
@@ -509,11 +603,12 @@ namespace ZM.ZMAsset
                 new Dictionary<string, HashSet<string>>(StringComparer.Ordinal);
             //00 最终 Bundle 名会转成小写，名称冲突检查必须忽略大小写，避免不同源码名落到同一输出文件。
             HashSet<string> occupiedBundleNames = new HashSet<string>(
-                mAllFolderBundleDic.Keys,
+                mAllFolderBundleDic.Keys.Concat(mSingleFileBundleDic.Keys),
                 StringComparer.OrdinalIgnoreCase);
-            //00 若文件夹规则本身已有大小写冲突，现在就失败，禁止到写磁盘时才互相覆盖。
-            if (occupiedBundleNames.Count != mAllFolderBundleDic.Count)
-                throw new InvalidOperationException($"模块 {_mBundleModuleName} 存在忽略大小写后重复的文件夹 Bundle 名称。");
+            //00 Prefab 收集前的显式 Bundle 必须在同一命名域中唯一，禁止单文件包与文件夹包被后续 Prefab 覆盖。
+            if (occupiedBundleNames.Count != mAllFolderBundleDic.Count + mSingleFileBundleDic.Count)
+                throw new InvalidOperationException(
+                    $"模块 {_mBundleModuleName} 存在忽略大小写后重复的文件夹/单文件 Bundle 名称。");
 
             //00 第一阶段继续：为每个 Prefab 建立稳定 Bundle 名、依赖快照和完整消费者集合。
             foreach (string prefabPath in prefabPaths)
@@ -523,7 +618,8 @@ namespace ZM.ZMAsset
                 //00 两个同名 Prefab 即使位于不同目录，最终输出名仍相同，因此必须在构建前明确拒绝。
                 if (!occupiedBundleNames.Add(bundleName))
                     throw new InvalidOperationException(
-                        $"模块 {_mBundleModuleName} 存在重复 Bundle 名称：{bundleName}，请调整同名 Prefab 或文件夹 Bundle 名称。");
+                        $"模块 {_mBundleModuleName} 存在重复 Bundle 名称：{bundleName}，" +
+                        "请调整同名 Prefab、单文件包或文件夹 Bundle 名称。");
 
                 //00 保存路径和 Bundle 名的稳定映射，供第二阶段生成 mAllPrefabsBundleDic。
                 prefabBundleNames.Add(prefabPath, bundleName);
@@ -684,7 +780,7 @@ namespace ZM.ZMAsset
                 return;
             }
 
-            //00 文件夹规则和 Prefab 规则已先执行，预置它们占有的 Bundle 名用于冲突检查。
+            //00 文件夹规则已先执行，预置它占有的 Bundle 名用于冲突检查；Prefab 名由后续阶段反向校验。
             HashSet<string> occupiedBundleNames = new HashSet<string>(
                 mAllFolderBundleDic.Keys.Concat(mAllPrefabsBundleDic.Keys),
                 StringComparer.OrdinalIgnoreCase);
@@ -940,7 +1036,20 @@ namespace ZM.ZMAsset
                 var buildAssetBundleOptions = UnityEditor.BuildAssetBundleOptions.ChunkBasedCompression;
                 //调用UnityAPI打包AssetBundle
                 ZMBuildProgress.Report("Unity 构建中", "BuildPipeline.BuildAssetBundles 正在执行，此阶段无法取消", .56f, false);
-                AssetBundleManifest manifest= BuildPipeline.BuildAssetBundles(mBundleOutPutPath,mBundleBuildList.ToArray(), buildAssetBundleOptions,mBuildTarget== UnityEditor.BuildTarget.NoTarget?EditorUserBuildSettings.activeBuildTarget:mBuildTarget);
+                AssetBundleManifest manifest;
+                using (ShaderVariantAuditBuildScope shaderAuditScope = ShaderVariantAuditBuildCoordinator.Begin(
+                           $"{mBuildType}_{_mBundleModuleName}",
+                           new[] { _mBundleModuleName },
+                           target,
+                           mBundleBuildList))
+                {
+                    manifest = BuildPipeline.BuildAssetBundles(
+                        mBundleOutPutPath,
+                        mBundleBuildList.ToArray(),
+                        buildAssetBundleOptions,
+                        target);
+                    shaderAuditScope.MarkBuildSucceeded(manifest != null);
+                }
                 if (manifest==null)
                 {
                     Debug.LogError("AssetBundle Build failed!");
@@ -1098,6 +1207,16 @@ namespace ZM.ZMAsset
                         OutputFileName = outputFileName
                     });
                 }
+            }
+
+            UnityEditor.BuildTarget sourceTarget = mBuildTarget == UnityEditor.BuildTarget.NoTarget
+                ? EditorUserBuildSettings.activeBuildTarget
+                : mBuildTarget;
+            if (sourceTarget == UnityEditor.BuildTarget.WebGL && mSourceEntryList.Count > 0)
+            {
+                throw new NotSupportedException(
+                    $"模块 {_mBundleModuleName} 配置了 {mSourceEntryList.Count} 个 Source 文件，但 WebGL 下载通道仅支持 AssetBundle。" +
+                    "请移除 Source 目录规则，或将这些文件转换为 TextAsset 等 Unity 资源并通过 AssetBundle 发布。");
             }
         }
 
@@ -1333,6 +1452,48 @@ namespace ZM.ZMAsset
                 $"{bundleConfigPath.Replace(Application.dataPath, "Assets").Replace("\\", "/")}"
             }});
 
+            AppendGeneratedShaderVariantCollection();
+
+        }
+
+        /// <summary>
+        /// Adds an up-to-date generated SVC as a normal module entry. The dedicated bundle then participates in
+        /// existing configuration, hot-update, encryption, download, and module-release behavior.
+        /// </summary>
+        private void AppendGeneratedShaderVariantCollection()
+        {
+            ShaderVariantAuditConfiguration configuration =
+                ShaderVariantAuditSettings.instance.CreateSnapshot();
+            ShaderVariantPrewarmBuildInput input = ShaderVariantPrewarmBuildInjector.CreateInput(
+                _mBundleModuleName,
+                mBuildTarget,
+                mBundleBuildList,
+                configuration);
+            if (input == null) return;
+
+            HashSet<string> existingAssetPaths = new HashSet<string>(
+                mBundleBuildList.SelectMany(build => build.assetNames ?? Array.Empty<string>())
+                    .Select(NormalizeAssetPath),
+                StringComparer.OrdinalIgnoreCase);
+            foreach (string assetPath in input.AssetPaths)
+            {
+                string normalizedPath = NormalizeAssetPath(assetPath);
+                if (!existingAssetPaths.Add(normalizedPath))
+                    throw new InvalidOperationException(
+                        $"模块 {_mBundleModuleName} 已通过普通规则收集生成的 Shader 预热资源：{normalizedPath}。" +
+                        "请从模块路径规则中排除 ZMAsset/Generated/ShaderVariants。");
+                RegisterExplicitEntry(normalizedPath);
+            }
+
+            mBundleBuildList.Add(new AssetBundleBuild
+            {
+                assetBundleName = CreatePhysicalBundleFileName(
+                    GenerateBundleName(input.BundleNameSuffix)),
+                assetNames = input.AssetPaths
+                    .Select(NormalizeAssetPath)
+                    .OrderBy(path => path, StringComparer.Ordinal)
+                    .ToArray()
+            });
         }
         /// <summary>
         /// 是否是重复的Bundle文件
@@ -1627,6 +1788,9 @@ namespace ZM.ZMAsset
                 .GetFiles("*", SearchOption.TopDirectoryOnly)
                 .OrderBy(file => file.Name, StringComparer.Ordinal)
                 .ToArray();
+            HashSet<string> assetBundleFileNames = new HashSet<string>(
+                mBundleBuildList.Select(build => build.assetBundleName),
+                StringComparer.OrdinalIgnoreCase);
             foreach (FileInfo bundleInfo in bundleInfoArr)
             {
                 //00 MD5 和大小都针对最终加密后的文件，下载端校验与实际发布字节一致。
@@ -1640,8 +1804,17 @@ namespace ZM.ZMAsset
                 {
                     // Unity Cache 的版本键只要求稳定且随内容变化；复用最终发布字节 MD5 可避免加密/复制后失配。
                     info.bundleHash = info.md5.ToLowerInvariant();
-                    if (!BuildPipeline.GetCRCForAssetBundle(bundleInfo.FullName, out info.crc))
-                        throw new InvalidDataException($"无法计算 WebGL AssetBundle CRC：{bundleInfo.FullName}");
+                    if (!assetBundleFileNames.Contains(bundleInfo.Name))
+                    {
+                        throw new InvalidDataException(
+                            $"WebGL 发布目录包含非 AssetBundle 文件，无法生成可运行的热更清单：{bundleInfo.FullName}");
+                    }
+
+                    if (!mWebGlBundleCrcs.TryGetValue(bundleInfo.Name, out info.crc))
+                    {
+                        // 保留旧单模块内部路径兼容性；统一编排路径应始终命中 raw 阶段冻结的 CRC。
+                        info.crc = ResolveWebGlBundleCrc(bundleInfo.FullName);
+                    }
                 }
                 //00 每个物理文件只产生一个清单条目。
                 hotAssetsPatch.hotAssetsList.Add(info);

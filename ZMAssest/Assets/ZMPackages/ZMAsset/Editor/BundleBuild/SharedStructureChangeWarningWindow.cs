@@ -5,7 +5,7 @@ using UnityEditor;
 using UnityEngine;
 using ZM.Editor;
 
-namespace ZM.ZMAsset
+namespace ZM.Asset
 {
     /// <summary>
     /// 00 Shared 严重结构变化专用模态确认窗口，统一使用 ZMAsset 暗色主题和代码矢量图标。

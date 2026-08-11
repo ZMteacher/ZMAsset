@@ -1,6 +1,6 @@
 using Cysharp.Threading.Tasks;
 
-namespace ZM.ZMAsset
+namespace ZM.Asset
 {
     /// <summary>
     /// 保存 Manifest、活动版本指针和事务日志等小型元数据。

@@ -1,0 +1,67 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!200 &20000000
+ShaderVariantCollection:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_Name: ZMAssetShaderVariants
+  m_Shaders:
+  - first: {fileID: 46, guid: 0000000000000000f000000000000000, type: 0}
+    second:
+      variants:
+      - keywords: DIRECTIONAL
+        passType: 4
+      - keywords: DIRECTIONAL LIGHTPROBE_SH
+        passType: 4
+      - keywords: DIRECTIONAL LIGHTPROBE_SH SHADOWS_SCREEN
+        passType: 4
+      - keywords: DIRECTIONAL LIGHTPROBE_SH SHADOWS_SCREEN VERTEXLIGHT_ON
+        passType: 4
+      - keywords: DIRECTIONAL LIGHTPROBE_SH VERTEXLIGHT_ON
+        passType: 4
+      - keywords: DIRECTIONAL SHADOWS_SCREEN
+        passType: 4
+      - keywords: DIRECTIONAL SHADOWS_SCREEN VERTEXLIGHT_ON
+        passType: 4
+      - keywords: DIRECTIONAL VERTEXLIGHT_ON
+        passType: 4
+      - keywords: DIRECTIONAL
+        passType: 5
+      - keywords: DIRECTIONAL SHADOWS_SCREEN
+        passType: 5
+      - keywords: DIRECTIONAL_COOKIE
+        passType: 5
+      - keywords: DIRECTIONAL_COOKIE SHADOWS_SCREEN
+        passType: 5
+      - keywords: POINT
+        passType: 5
+      - keywords: POINT SHADOWS_CUBE
+        passType: 5
+      - keywords: POINT SHADOWS_CUBE SHADOWS_SOFT
+        passType: 5
+      - keywords: POINT_COOKIE
+        passType: 5
+      - keywords: POINT_COOKIE SHADOWS_CUBE
+        passType: 5
+      - keywords: POINT_COOKIE SHADOWS_CUBE SHADOWS_SOFT
+        passType: 5
+      - keywords: SHADOWS_DEPTH SHADOWS_SOFT SPOT
+        passType: 5
+      - keywords: SHADOWS_DEPTH SPOT
+        passType: 5
+      - keywords: SPOT
+        passType: 5
+      - keywords: SHADOWS_CUBE
+        passType: 8
+      - keywords: SHADOWS_DEPTH
+        passType: 8
+      - keywords: 
+        passType: 10
+      - keywords: LIGHTPROBE_SH
+        passType: 10
+      - keywords: LIGHTPROBE_SH UNITY_HDR_ON
+        passType: 10
+      - keywords: UNITY_HDR_ON
+        passType: 10

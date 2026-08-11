@@ -14,7 +14,7 @@ using System.Collections;
 using System.Collections.Generic;
 using Cysharp.Threading.Tasks;
 using UnityEngine;
-namespace ZM.ZMAsset
+namespace ZM.Asset
 {
     public class HotUpdateManager :  MonoSingleton<HotUpdateManager>
     {

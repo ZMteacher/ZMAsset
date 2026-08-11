@@ -13,7 +13,7 @@
 using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
-namespace ZM.ZMAsset
+namespace ZM.Asset
 {
     public class ClassObjectPool<T> where T : class, new()
     {

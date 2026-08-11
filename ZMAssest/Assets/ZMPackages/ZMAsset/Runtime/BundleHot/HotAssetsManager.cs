@@ -14,7 +14,7 @@ using System;
 using System.Collections.Generic;
 using Cysharp.Threading.Tasks;
 using UnityEngine;
-namespace ZM.ZMAsset
+namespace ZM.Asset
 {
     /// <summary>
     /// 等待下载的模块

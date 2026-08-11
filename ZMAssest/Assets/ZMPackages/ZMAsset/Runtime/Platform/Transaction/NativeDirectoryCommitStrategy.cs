@@ -3,7 +3,7 @@ using System.IO;
 using Newtonsoft.Json;
 using UnityEngine;
 
-namespace ZM.ZMAsset
+namespace ZM.Asset
 {
     /// <summary>
     /// Native 目录事务实现。

@@ -1,0 +1,23 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 9eb9960d6309fe14e930c2974069042d, type: 3}
+  m_Name: ZMAssetShaderVariantManifest
+  m_EditorClassIdentifier: 
+  m_SchemaVersion: 1
+  m_ModuleName: Shared
+  m_ProfileName: Default
+  m_BuildTarget: WebGL
+  m_SourceManifestHash: 96a54102c3426680d166872274b5fe525c9aefcf28ac5d91c32fcee4a70edbd3
+  m_CollectionContentHash: b8f63e1a25bff46d872d654f0a3a9fff5928d0630c5f5f5c5e37783a6939d8fc
+  m_ShaderCount: 1
+  m_VariantCount: 27
+  m_Collection: {fileID: 20000000, guid: 39fcfb952471ab246a9930910430d7e0, type: 2}

@@ -17,7 +17,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using UnityEngine;
 
-namespace ZM.ZMAsset
+namespace ZM.Asset
 {
     public class DownLoadEventHandler
     {

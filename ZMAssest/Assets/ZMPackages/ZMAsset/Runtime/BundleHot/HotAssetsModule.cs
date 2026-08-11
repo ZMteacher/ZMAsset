@@ -21,7 +21,7 @@ using Cysharp.Threading.Tasks;
 using UnityEngine;
 using UnityEngine.Networking;
 
-namespace ZM.ZMAsset
+namespace ZM.Asset
 {
     /// <summary>
     /// 热更新模块的只读状态快照，避免业务层直接操作 HotAssetsModule 内部生命周期。

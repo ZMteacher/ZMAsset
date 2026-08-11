@@ -2,7 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Threading;
 
-namespace ZM.ZMAsset
+namespace ZM.Asset
 {
     /// <summary>
     /// 显式多模块热更新请求。模块顺序由业务层决定，框架不会推断或追加 Shared 消费者。

@@ -1,7 +1,7 @@
 using System;
 using System.Collections.Generic;
 
-namespace ZM.ZMAsset
+namespace ZM.Asset
 {
     /// <summary>
     /// Unity 批处理模式下的资源构建与配置重生成入口。

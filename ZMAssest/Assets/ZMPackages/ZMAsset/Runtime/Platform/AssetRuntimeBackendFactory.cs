@@ -1,6 +1,6 @@
 using System;
 
-namespace ZM.ZMAsset
+namespace ZM.Asset
 {
     /// <summary>
     /// 标识当前运行时应使用的资源平台后端。

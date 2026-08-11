@@ -1,7 +1,7 @@
 using System.IO;
 using Cysharp.Threading.Tasks;
 
-namespace ZM.ZMAsset
+namespace ZM.Asset
 {
     /// <summary>
     /// Native 文件元数据存储。

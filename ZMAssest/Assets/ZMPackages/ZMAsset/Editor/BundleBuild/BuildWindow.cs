@@ -6,7 +6,15 @@ using System.IO;
 
 public partial class BuildWindows : EditorWindow
 {
-    private enum Page { AssetBundle, HotPatch, Settings, Manual }
+    // Explicit values preserve previously serialized page selections when new pages are introduced.
+    private enum Page
+    {
+        AssetBundle = 0,
+        HotPatch = 1,
+        Settings = 2,
+        Manual = 3,
+        ShaderVariants = 4
+    }
 
     [SerializeField] private BuildBundleWindow buildBundleWindow = new BuildBundleWindow();
     [SerializeField] private BuildHotPatchWindow buildHotWindow = new BuildHotPatchWindow();
@@ -91,6 +99,7 @@ public partial class BuildWindows : EditorWindow
             {
                 case Page.AssetBundle: buildBundleWindow.OGUI(); break;
                 case Page.HotPatch: buildHotWindow.OGUI(); break;
+                case Page.ShaderVariants: DrawShaderVariants(); break;
                 case Page.Settings: DrawSettings(); break;
                 case Page.Manual: DrawManual(); break;
             }
@@ -323,6 +332,8 @@ public partial class BuildWindows : EditorWindow
         y += 62;
         DrawNavigationItem(new Rect(0, y, rect.width, 52), Page.HotPatch, "热更补丁");
         y += 62;
+        DrawNavigationItem(new Rect(0, y, rect.width, 52), Page.ShaderVariants, "Shader 变体");
+        y += 62;
         DrawNavigationItem(new Rect(0, y, rect.width, 52), Page.Settings, "Bundle 设置");
         y += 62;
         DrawNavigationItem(new Rect(0, y, rect.width, 52), Page.Manual, "使用手册");
@@ -373,6 +384,14 @@ public partial class BuildWindows : EditorWindow
             Rect doc = new(rect.x + 3, rect.y + 1, 16, 21);
             Handles.DrawAAPolyLine(2f, new Vector3(doc.x, doc.y), new Vector3(doc.x + 11, doc.y), new Vector3(doc.xMax, doc.y + 5), new Vector3(doc.xMax, doc.yMax), new Vector3(doc.x, doc.yMax), new Vector3(doc.x, doc.y));
             Handles.DrawAAPolyLine(2f, new Vector3(rect.x + 14, rect.y + 13), new Vector3(rect.x + 10, rect.y + 19), new Vector3(rect.x + 15, rect.y + 19), new Vector3(rect.x + 12, rect.y + 24));
+        }
+        else if (page == Page.ShaderVariants)
+        {
+            Handles.matrix = oldMatrix;
+            Handles.color = old;
+            Handles.EndGUI();
+            ZMAssetEditorIcons.Draw(rect, ZMAssetEditorIcon.ShaderVariant, color);
+            return;
         }
         else if (page == Page.Settings)
         {

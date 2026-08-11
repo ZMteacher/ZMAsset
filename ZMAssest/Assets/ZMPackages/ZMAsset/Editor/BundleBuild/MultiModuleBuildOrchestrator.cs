@@ -7,7 +7,7 @@ using Newtonsoft.Json;
 using UnityEditor;
 using UnityEngine;
 
-namespace ZM.ZMAsset
+namespace ZM.Asset
 {
     /// <summary>
     /// 00 统一编排单模块、多独立模块以及 Business→Shared 构建，所有产物都先进入临时目录再原子发布。
@@ -122,7 +122,10 @@ namespace ZM.ZMAsset
                 Dictionary<string, AssetBundleBuildLocation> globalAssetLocations =
                     MergeAssetLocations(buildClosure, compilers);
                 //00 Bundle 名在文件系统层必须全局唯一，否则统一 BuildPipeline 会覆盖其他模块文件。
-                List<AssetBundleBuild> unifiedBuilds = MergeBundleBuilds(buildClosure, compilers);
+                List<AssetBundleBuild> unifiedBuilds = MergeBundleBuilds(
+                    buildClosure,
+                    compilers,
+                    out Dictionary<string, string> unifiedBundleOwners);
                 //00 在调用 Unity 前再次验证每个显式输入仍属于声明模块，防止收集期间配置被外部修改。
                 ValidateCollectedOwnership(buildClosure, compilers, analysis);
 
@@ -161,11 +164,21 @@ namespace ZM.ZMAsset
                     .42f,
                     false);
                 //00 沿用旧构建的 ChunkBasedCompression，第三期不改变压缩协议。
-                AssetBundleManifest manifest = BuildPipeline.BuildAssetBundles(
-                    rawOutputPath,
-                    unifiedBuilds.ToArray(),
-                    UnityEditor.BuildAssetBundleOptions.ChunkBasedCompression,
-                    resolvedBuildTarget);
+                AssetBundleManifest manifest;
+                using (ShaderVariantAuditBuildScope shaderAuditScope = ShaderVariantAuditBuildCoordinator.Begin(
+                           $"{buildType}_Unified",
+                           buildClosure.Select(module => module.moduleName),
+                           resolvedBuildTarget,
+                           unifiedBuilds,
+                           unifiedBundleOwners))
+                {
+                    manifest = BuildPipeline.BuildAssetBundles(
+                        rawOutputPath,
+                        unifiedBuilds.ToArray(),
+                        UnityEditor.BuildAssetBundleOptions.ChunkBasedCompression,
+                        resolvedBuildTarget);
+                    shaderAuditScope.MarkBuildSucceeded(manifest != null);
+                }
                 //00 Unity 返回 null 表示构建失败，不能继续提取或覆盖任何正式目录。
                 if (manifest == null)
                     throw new InvalidOperationException("Unity 统一 BuildPipeline 构建 AssetBundle 失败。");
@@ -372,11 +385,11 @@ namespace ZM.ZMAsset
         /// </summary>
         private static List<AssetBundleBuild> MergeBundleBuilds(
             IReadOnlyList<BundleModuleData> modules,
-            IReadOnlyDictionary<string, BuildBundleCompiler> compilers)
+            IReadOnlyDictionary<string, BuildBundleCompiler> compilers,
+            out Dictionary<string, string> bundleOwners)
         {
             List<AssetBundleBuild> unifiedBuilds = new List<AssetBundleBuild>();
-            Dictionary<string, string> bundleOwners =
-                new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            bundleOwners = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
             foreach (BundleModuleData module in modules)
             {
                 foreach (AssetBundleBuild bundleBuild in compilers[module.moduleName].Context.BundleBuilds)

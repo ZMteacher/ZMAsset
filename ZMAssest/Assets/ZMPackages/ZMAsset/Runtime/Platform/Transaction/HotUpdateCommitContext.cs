@@ -1,4 +1,4 @@
-namespace ZM.ZMAsset
+namespace ZM.Asset
 {
     /// <summary>
     /// 描述一次 Native 热更新目录事务使用的全部可信路径和旧状态。

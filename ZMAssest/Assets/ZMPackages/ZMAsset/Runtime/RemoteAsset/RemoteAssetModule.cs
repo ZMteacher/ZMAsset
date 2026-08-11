@@ -7,7 +7,7 @@ using Newtonsoft.Json;
 using UnityEngine;
 using UnityEngine.Networking;
 
-namespace ZM.ZMAsset
+namespace ZM.Asset
 {
     /// <summary>
     /// 保存单个远端资源模块的 Manifest、缺失文件集合和初始化互斥状态。

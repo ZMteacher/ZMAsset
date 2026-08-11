@@ -2,7 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 
-namespace ZM.ZMAsset
+namespace ZM.Asset
 {
     /// <summary>
     /// 00 Shared 补丁配置变化等级；这里只分析资源身份和依赖结构，不推测线上业务兼容性。

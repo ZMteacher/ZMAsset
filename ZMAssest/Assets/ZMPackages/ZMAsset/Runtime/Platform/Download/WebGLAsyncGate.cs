@@ -2,7 +2,7 @@ using System.Collections.Generic;
 using System.Threading;
 using Cysharp.Threading.Tasks;
 
-namespace ZM.ZMAsset
+namespace ZM.Asset
 {
     /// <summary>
     /// WebGL 单线程环境使用的协作式异步门。避免 SemaphoreSlim 等待者依赖线程池续体而永久挂起。

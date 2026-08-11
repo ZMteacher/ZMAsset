@@ -14,14 +14,41 @@
       "isAddressableAsset": false,
       "isLoadableEntry": true,
       "bundleDependce": [
-        "shared_shared_61af1767_01.uab"
+        "gameone_bangers.uab",
+        "shared_shared_0f52e5b8_01.uab"
       ],
       "bundleDependencies": [
         {
+          "bundleModule": "GameOne",
+          "bundleName": "gameone_bangers.uab"
+        },
+        {
           "bundleModule": "Shared",
-          "bundleName": "shared_shared_61af1767_01.uab"
+          "bundleName": "shared_shared_0f52e5b8_01.uab"
         }
       ]
+    },
+    {
+      "path": "Assets/GameData/GameOne/Fonts/Bangers.ttf",
+      "crc": 915466165,
+      "bundleName": "gameone_bangers.uab",
+      "assetName": "Bangers.ttf",
+      "bundleModule": "GameOne",
+      "isAddressableAsset": false,
+      "isLoadableEntry": true,
+      "bundleDependce": [],
+      "bundleDependencies": []
+    },
+    {
+      "path": "Assets/GameData/GameOne/Fonts/NotoSansSC-Regular.otf",
+      "crc": 2366711285,
+      "bundleName": "gameone_notosanssc-regular.uab",
+      "assetName": "NotoSansSC-Regular.otf",
+      "bundleModule": "GameOne",
+      "isAddressableAsset": false,
+      "isLoadableEntry": true,
+      "bundleDependce": [],
+      "bundleDependencies": []
     },
     {
       "path": "Assets/ZMPackages/ZMAsset/Config/gameoneassetbundleconfig.json",
@@ -31,6 +58,28 @@
       "bundleModule": "GameOne",
       "isAddressableAsset": false,
       "isLoadableEntry": false,
+      "bundleDependce": [],
+      "bundleDependencies": []
+    },
+    {
+      "path": "Assets/ZMPackages/ZMAsset/Generated/ShaderVariants/GameOne_62aa73a3dfb0/Default_21b111cbfe6e/ZMAssetShaderVariantManifest.asset",
+      "crc": 2370629959,
+      "bundleName": "gameone_zmasset_shadervariants_default_21b111cbfe6e.uab",
+      "assetName": "ZMAssetShaderVariantManifest.asset",
+      "bundleModule": "GameOne",
+      "isAddressableAsset": false,
+      "isLoadableEntry": true,
+      "bundleDependce": [],
+      "bundleDependencies": []
+    },
+    {
+      "path": "Assets/ZMPackages/ZMAsset/Generated/ShaderVariants/GameOne_62aa73a3dfb0/Default_21b111cbfe6e/ZMAssetShaderVariants.shadervariants",
+      "crc": 3767746043,
+      "bundleName": "gameone_zmasset_shadervariants_default_21b111cbfe6e.uab",
+      "assetName": "ZMAssetShaderVariants.shadervariants",
+      "bundleModule": "GameOne",
+      "isAddressableAsset": false,
+      "isLoadableEntry": true,
       "bundleDependce": [],
       "bundleDependencies": []
     }

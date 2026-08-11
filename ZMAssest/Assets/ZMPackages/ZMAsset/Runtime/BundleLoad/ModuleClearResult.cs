@@ -1,6 +1,6 @@
 using System;
 
-namespace ZM.ZMAsset
+namespace ZM.Asset
 {
     public enum ModuleClearMode
     {

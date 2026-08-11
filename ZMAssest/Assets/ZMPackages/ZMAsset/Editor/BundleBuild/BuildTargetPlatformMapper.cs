@@ -1,7 +1,7 @@
 using System;
 using UnityEditor;
 
-namespace ZM.ZMAsset
+namespace ZM.Asset
 {
     /// <summary>
     /// 统一维护 Unity 编辑器构建目标与运行时热更协议平台之间的映射。

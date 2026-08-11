@@ -1,6 +1,6 @@
 using System;
 
-namespace ZM.ZMAsset
+namespace ZM.Asset
 {
     /// <summary>
     /// 远端热更清单无法确认时使用的异常，携带模块和失败类别，便于上层区分网络失败与业务初始化失败。

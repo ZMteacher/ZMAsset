@@ -1,6 +1,6 @@
 using System;
 
-namespace ZM.ZMAsset
+namespace ZM.Asset
 {
     /// <summary>
     /// 00 唯一标识一个物理 AssetBundle；模块名和 Bundle 名共同参与相等性与哈希计算。

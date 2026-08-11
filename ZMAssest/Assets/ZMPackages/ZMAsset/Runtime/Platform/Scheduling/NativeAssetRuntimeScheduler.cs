@@ -1,7 +1,7 @@
 using System;
 using Cysharp.Threading.Tasks;
 
-namespace ZM.ZMAsset
+namespace ZM.Asset
 {
     /// <summary>
     /// Native 调度实现，继续使用 UniTask 线程池执行配置解析等纯 CPU 工作。

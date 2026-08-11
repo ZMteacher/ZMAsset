@@ -20,7 +20,7 @@ using UnityEngine.SceneManagement;
 using UnityEngine.U2D;
 using Object = UnityEngine.Object;
 
-namespace ZM.ZMAsset
+namespace ZM.Asset
 {
     /// <summary>
     /// 缓存对象
@@ -2722,6 +2722,9 @@ namespace ZM.ZMAsset
         /// <returns></returns>
         public async UniTask<bool> InitAssetModule(string bundleModule, bool isRemoteAsset = false)
         {
+#if UNITY_EDITOR
+            if (BundleSettings.Instance.loadAssetType== LoadAssetEnum.Editor)  return true;
+#endif
             if (!isRemoteAsset)
             {
                return await AssetBundleManager.Instance.InitializeAssetModule(bundleModule);

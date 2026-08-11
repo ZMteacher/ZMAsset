@@ -6,7 +6,7 @@
     {
       "path": "Assets/GameData/Shared/Textures/Bg/Texture.png",
       "crc": 3836276111,
-      "bundleName": "shared_shared_61af1767_01.uab",
+      "bundleName": "shared_shared_0f52e5b8_01.uab",
       "assetName": "Texture.png",
       "bundleModule": "Shared",
       "isAddressableAsset": false,
@@ -55,6 +55,28 @@
       "bundleModule": "Shared",
       "isAddressableAsset": false,
       "isLoadableEntry": false,
+      "bundleDependce": [],
+      "bundleDependencies": []
+    },
+    {
+      "path": "Assets/ZMPackages/ZMAsset/Generated/ShaderVariants/Shared_e3c4b39d6d50/Default_21b111cbfe6e/ZMAssetShaderVariantManifest.asset",
+      "crc": 344651685,
+      "bundleName": "shared_zmasset_shadervariants_default_21b111cbfe6e.uab",
+      "assetName": "ZMAssetShaderVariantManifest.asset",
+      "bundleModule": "Shared",
+      "isAddressableAsset": false,
+      "isLoadableEntry": true,
+      "bundleDependce": [],
+      "bundleDependencies": []
+    },
+    {
+      "path": "Assets/ZMPackages/ZMAsset/Generated/ShaderVariants/Shared_e3c4b39d6d50/Default_21b111cbfe6e/ZMAssetShaderVariants.shadervariants",
+      "crc": 1706594406,
+      "bundleName": "shared_zmasset_shadervariants_default_21b111cbfe6e.uab",
+      "assetName": "ZMAssetShaderVariants.shadervariants",
+      "bundleModule": "Shared",
+      "isAddressableAsset": false,
+      "isLoadableEntry": true,
       "bundleDependce": [],
       "bundleDependencies": []
     }

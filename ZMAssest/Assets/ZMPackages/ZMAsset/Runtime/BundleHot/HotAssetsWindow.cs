@@ -14,7 +14,7 @@ using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.UI;
-using ZM.ZMAsset;
+using ZM.Asset;
 public class HotAssetsWindow : MonoBehaviour
 {
     public Slider progressSlider;

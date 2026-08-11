@@ -6,7 +6,7 @@ using Cysharp.Threading.Tasks;
 using Newtonsoft.Json;
 using UnityEngine;
 
-namespace ZM.ZMAsset
+namespace ZM.Asset
 {
     /// <summary>
     /// 显式多模块热更新协调器：并行准备、串行提交、串行初始化、失败逆序回滚。

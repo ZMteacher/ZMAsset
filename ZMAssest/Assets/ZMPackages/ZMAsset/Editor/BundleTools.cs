@@ -23,7 +23,7 @@ public class BundleTools
     // [MenuItem("ZMFrame/GeneratorModuleEnum",false,1)]
     public static void GenerateBundleModuleEnum()
     {
-        string namespaceName = "ZM.ZMAsset";
+        string namespaceName = "ZM.Asset";
         string classname = "BundleModuleEnum";
 
         if (File.Exists(mBundleModuleEnumFilePath))
