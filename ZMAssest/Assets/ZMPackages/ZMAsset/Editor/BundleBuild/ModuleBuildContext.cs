@@ -46,7 +46,7 @@ namespace ZM.Asset
         internal readonly Dictionary<string, List<string>> PrefabBundles =
             new Dictionary<string, List<string>>(StringComparer.Ordinal);
 
-        //00 单文件包 Bundle 单独保存，每个文件独占一个 Bundle，不参与共享分析。
+        //00 逐文件分包 Bundle 单独保存，每个文件独占一个 Bundle，不参与共享分析。
         internal readonly Dictionary<string, List<string>> SingleFileBundles =
             new Dictionary<string, List<string>>(StringComparer.Ordinal);
 
@@ -63,7 +63,7 @@ namespace ZM.Asset
         internal readonly HashSet<string> ExplicitEntryPaths =
             new HashSet<string>(StringComparer.Ordinal);
 
-        //00 源文件规则保存稳定快照，防止配置写入和文件复制之间再次扫描得到不同结果。
+        //00 源文件复制规则保存稳定快照，防止配置写入和文件复制之间再次扫描得到不同结果。
         internal readonly List<SourceBuildEntry> SourceEntries = new List<SourceBuildEntry>();
 
         /// <summary>
@@ -85,7 +85,7 @@ namespace ZM.Asset
     }
 
     /// <summary>
-    /// 00 描述一个源文件规则在本次构建中固定下来的输入和输出信息。
+    /// 00 描述一个源文件复制规则在本次构建中固定下来的输入和输出信息。
     /// </summary>
     internal sealed class SourceBuildEntry
     {

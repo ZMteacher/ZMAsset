@@ -108,10 +108,11 @@ public partial class BuildWindows
                 cardWidth);
             GUILayout.Space(12);
             DrawManualCard("模块打包规则",
-                "预制体包：以 Prefab 为入口收集依赖并生成 Bundle。\n\n" +
-                "文件夹子包：按指定目录的子文件夹分别生成 Bundle。\n\n" +
-                "文件夹包：将指定文件夹内容合并到一个 Bundle。\n\n" +
-                "源文件配置：不打包为 Bundle，直接复制原文件，适用于 mp3、mp4 等。\n\n" +
+                "预制体分包：目录中的每个 Prefab 分别生成一个 Bundle。\n\n" +
+                "子目录分包：指定目录下的每个一级子目录分别生成一个 Bundle。\n\n" +
+                "整目录打包：将指定目录内容合并到一个 Bundle。\n\n" +
+                "逐文件分包：目录中的每个可打包文件分别生成一个 Bundle。\n\n" +
+                "源文件复制：不生成 Bundle，直接复制原文件，适用于 mp3、mp4 等。\n\n" +
                 "修改规则后务必保存配置，再重新执行资源构建。",
                 cardWidth);
         }

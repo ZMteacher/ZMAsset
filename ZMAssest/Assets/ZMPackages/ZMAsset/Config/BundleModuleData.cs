@@ -74,7 +74,7 @@ public class BundleModuleData
     public BundleFileInfo[] signFolderPathArr;
     
     public string[] sourceFolderPathArr;
-    //00 单文件包目录配置；目录下每个可打包文件（排除 .prefab/.cs/.meta）独立成为一个 Bundle。
+    //00 逐文件分包目录配置；目录下每个可打包文件（排除 .prefab/.cs/.meta）独立成为一个 Bundle。
     public string[] singleFilePathArr;
 }
 [System.Serializable]

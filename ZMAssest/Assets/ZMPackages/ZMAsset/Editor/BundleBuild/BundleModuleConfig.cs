@@ -26,7 +26,7 @@ public class BundleModuleConfig : EditorWindow
     [SerializeField] private int selectedTab;
     [SerializeField] private Vector2 scrollPosition;
 
-    private static readonly string[] TabNames = { "预制体包", "文件夹子包", "文件夹包", "单文件包", "源文件配置" };
+    private static readonly string[] TabNames = { "预制体分包", "子目录分包", "整目录打包", "逐文件分包", "源文件复制" };
 
     public static void ShowWindow(string targetModuleName)
     {
@@ -97,26 +97,26 @@ public class BundleModuleConfig : EditorWindow
             switch ((PathType)selectedTab)
             {
                 case PathType.Prefab:
-                    DrawDescription("该文件夹下的所有预制体都会单独打成一个 AssetBundle");
+                    DrawDescription("目录中的每个 Prefab 分别生成一个独立 AssetBundle");
                     //00 一个策略统一控制当前模块 Prefab Tab 中配置的全部搜索目录。
                     DrawPrefabDependencyMode();
                     DrawPathArray(ref prefabPathArr, "预制体资源路径");
                     break;
                 case PathType.RootFolder:
-                    DrawDescription("该文件夹下的所有子文件夹都会单独打成一个 AssetBundle");
-                    DrawPathArray(ref rootFolderPathArr, "文件夹子包路径");
+                    DrawDescription("所选目录下的每个一级子目录分别生成一个 AssetBundle");
+                    DrawPathArray(ref rootFolderPathArr, "子目录分包路径");
                     break;
                 case PathType.SingleBundle:
-                    DrawDescription("指定的文件夹会单独打成一个 AssetBundle");
+                    DrawDescription("将指定目录整体生成一个 AssetBundle，并可自定义 Bundle 名称");
                     DrawBundleFileArray();
                     break;
                 case PathType.SingleFile:
-                    DrawDescription("指定目录下的每个文件都会单独打成一个 AssetBundle");
-                    DrawPathArray(ref singleFilePathArr, "单文件包路径");
+                    DrawDescription("目录中的每个可打包文件分别生成一个独立 AssetBundle");
+                    DrawPathArray(ref singleFilePathArr, "逐文件分包路径");
                     break;
                 case PathType.Source:
-                    DrawDescription("指定文件夹下的所有源文件会复制到 AssetBundle 文件夹");
-                    DrawPathArray(ref sourceFolderPathArr, "源文件路径");
+                    DrawDescription("不生成 AssetBundle，直接将目录中的原文件复制到资源输出目录");
+                    DrawPathArray(ref sourceFolderPathArr, "源文件复制路径");
                     break;
             }
         }
@@ -177,7 +177,7 @@ public class BundleModuleConfig : EditorWindow
     private void DrawBundleFileArray()
     {
         signFolderPathArr ??= new BundleFileInfo[0];
-        GUILayout.Label("文件夹包路径", EditorStyles.boldLabel);
+        GUILayout.Label("整目录打包路径", EditorStyles.boldLabel);
         for (int i = 0; i < signFolderPathArr.Length; i++)
         {
             signFolderPathArr[i] ??= new BundleFileInfo();
@@ -269,7 +269,7 @@ public class BundleModuleConfig : EditorWindow
         data.rootFolderPathArr = rootFolderPathArr;
         data.signFolderPathArr = signFolderPathArr;
         data.sourceFolderPathArr = sourceFolderPathArr;
-        //00 与主抽屉保持一致，过滤空白路径项后再持久化单文件包目录。
+        //00 与主抽屉保持一致，过滤空白路径项后再持久化逐文件分包目录。
         data.singleFilePathArr = RemoveEmptyPaths(singleFilePathArr);
         BuildBundleConfigura.Instance.SaveModuleData(data);
         CloseAndRefresh();

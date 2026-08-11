@@ -6,7 +6,7 @@ using UnityEngine;
 internal class BundleModuleDrawer
 {
     private enum RuleType { Prefab, RootFolder, SingleBundle, SingleFile, Source }
-    private static readonly string[] Tabs = { "预制体包", "文件夹子包", "文件夹包", "单文件包", "源文件配置" };
+    private static readonly string[] Tabs = { "预制体分包", "子目录分包", "整目录打包", "逐文件分包", "源文件复制" };
 
     [SerializeField] private bool isOpen;
     [SerializeField] private string moduleName;
@@ -183,10 +183,10 @@ internal class BundleModuleDrawer
                 switch ((RuleType)selectedTab)
                 {
                     case RuleType.Prefab: DrawPrefabRules(); break;
-                    case RuleType.RootFolder: DrawPathList(ref rootPaths, "选择文件夹子包路径"); break;
+                    case RuleType.RootFolder: DrawPathList(ref rootPaths, "选择子目录分包根目录"); break;
                     case RuleType.SingleBundle: DrawBundleList(); break;
-                    case RuleType.SingleFile: DrawPathList(ref singleFilePaths, "选择单文件包目录"); break;
-                    case RuleType.Source: DrawPathList(ref sourcePaths, "选择源文件路径"); break;
+                    case RuleType.SingleFile: DrawPathList(ref singleFilePaths, "选择逐文件分包目录"); break;
+                    case RuleType.Source: DrawPathList(ref sourcePaths, "选择源文件复制目录"); break;
                 }
                 GUILayout.Space(3);
             }
@@ -195,7 +195,7 @@ internal class BundleModuleDrawer
     }
 
     /// <summary>
-    /// 00 绘制控制当前模块全部 Prefab 搜索目录的统一资源加载策略和路径列表。
+    /// 00 绘制控制当前模块全部预制体分包目录的统一资源加载策略和路径列表。
     /// </summary>
     private void DrawPrefabRules()
     {
@@ -241,12 +241,12 @@ internal class BundleModuleDrawer
     private void DrawRuleHelp(Rect rect)
     {
         GUI.Box(rect, GUIContent.none, ZMBuildStyles.RuleHelpPanel);
-        string[] titles = { "预制体包", "文件夹子包", "文件夹包", "单文件包", "源文件配置" };
+        string[] titles = { "预制体分包", "子目录分包", "整目录打包", "逐文件分包", "源文件复制" };
         string[] descriptions =
         {
-            "文件夹中的每个预制体分别生成一个独立 Bundle",
-            "所选目录下的每个一级子文件夹分别生成一个 Bundle",
-            "将指定文件夹整体打成一个 Bundle，并可自定义 Bundle 名称",
+            "目录中的每个 Prefab 分别生成一个独立 Bundle",
+            "所选目录下的每个一级子目录分别生成一个 Bundle",
+            "将指定目录整体生成一个 Bundle，并可自定义 Bundle 名称",
             "目录下的每个可打包文件分别生成一个独立 Bundle，例如：icon 图标",
             "不打包为 Bundle，直接将原文件复制到资源输出目录，例如：mp3、mp4 等"
         };
@@ -254,9 +254,10 @@ internal class BundleModuleDrawer
         for (int index = 0; index < titles.Length; index++)
         {
             float y = rect.y + 9 + index * 42f;
-            Rect marker = new Rect(rect.x + 12, y + 11, 6, 6);
+            //00 标题高 28px，描述高 34px；标题与状态点下移 3px 后与描述共用同一水平中线。
+            Rect marker = new Rect(rect.x + 12, y + 14, 6, 6);
             GUI.Box(marker, GUIContent.none, index == selectedTab ? ZMBuildStyles.RuleMarkerSelected : ZMBuildStyles.RuleMarker);
-            GUI.Label(new Rect(rect.x + 27, y, 88, 28), titles[index], index == selectedTab ? ZMBuildStyles.RuleHelpTitleSelected : ZMBuildStyles.RuleHelpTitle);
+            GUI.Label(new Rect(rect.x + 27, y + 3, 88, 28), titles[index], index == selectedTab ? ZMBuildStyles.RuleHelpTitleSelected : ZMBuildStyles.RuleHelpTitle);
             GUI.Label(new Rect(rect.x + 115, y, rect.width - 127, 34), descriptions[index], ZMBuildStyles.RuleHelpDescription);
         }
     }

@@ -215,7 +215,7 @@ namespace ZM.Asset
             List<BundleModuleData> modules = CollectModules(targetSnapshot);
             //00 目录拥有者用于后续按物理位置判断每一条依赖究竟属于哪个模块。
             List<DirectoryOwner> directoryOwners = new List<DirectoryOwner>();
-            //00 显式资源列表用于覆盖 Prefab、文件夹包和文件夹子包等所有 AssetBundle 入口。
+            //00 显式资源列表用于覆盖预制体分包、整目录打包和子目录分包等所有 AssetBundle 入口。
             List<ExplicitAsset> explicitAssets = new List<ExplicitAsset>();
             //00 Entry 字典保持原有的规则重复检测能力，路径比较忽略 Windows 大小写差异。
             Dictionary<string, EntryOwner> entryOwners =
@@ -410,7 +410,7 @@ namespace ZM.Asset
                     $"模块 {moduleName} 使用了不支持的 Prefab 资源加载策略：{module.prefabDependencyEntryMode}。");
             }
 
-            //00 文件夹包规则拥有配置目录下的全部文件，并把其中每个资源直接交给 Unity 打包。
+            //00 整目录打包规则拥有配置目录下的全部文件，并把其中每个资源直接交给 Unity 打包。
             if (module.signFolderPathArr != null)
             {
                 foreach (BundleFileInfo bundleFileInfo in module.signFolderPathArr)
@@ -418,17 +418,17 @@ namespace ZM.Asset
                     //00 空配置槽按未配置处理，避免占位符进入文件系统 API。
                     if (bundleFileInfo == null || string.IsNullOrWhiteSpace(bundleFileInfo.bundlePath)) continue;
                     //00 路径先验证并转换为统一的 Assets/... 目录，归属判断不使用绝对路径。
-                    string assetDirectory = ResolveAssetDirectory(moduleName, bundleFileInfo.bundlePath, "文件夹包目录");
+                    string assetDirectory = ResolveAssetDirectory(moduleName, bundleFileInfo.bundlePath, "整目录打包目录");
                     //00 Bundle 名只用于诊断，不参与物理归属计算。
-                    string ruleName = $"文件夹包：{bundleFileInfo.abName}";
+                    string ruleName = $"整目录打包：{bundleFileInfo.abName}";
                     //00 整个目录属于当前模块，目录中的 Entry=false 依赖同样继承这一所有权。
                     RegisterRuleDirectoryOwnership(moduleName, ruleName, assetDirectory, moduleRootDirectory, directoryOwners);
-                    //00 文件夹包中的每个可打包文件都可能继续引用其他模块资源，因此都需依赖检查。
+                    //00 整目录打包中的每个可打包文件都可能继续引用其他模块资源，因此都需依赖检查。
                     CollectDirectoryAssets(moduleName, ruleName, assetDirectory, true, explicitAssets, entryOwners, crcPaths);
                 }
             }
 
-            //00 文件夹子包规则在构建时只处理根目录的直接子文件夹，但物理所有权覆盖整个配置根目录。
+            //00 子目录分包规则在构建时只处理根目录的直接子目录，但物理所有权覆盖整个配置根目录。
             if (module.rootFolderPathArr != null)
             {
                 foreach (string configuredPath in module.rootFolderPathArr)
@@ -436,9 +436,9 @@ namespace ZM.Asset
                     //00 空字符串是合法的“尚未配置”状态，不调用 Directory.Exists。
                     if (string.IsNullOrWhiteSpace(configuredPath)) continue;
                     //00 根目录用于归属判定，防止其子目录被另一个模块重复声明。
-                    string rootAssetDirectory = ResolveAssetDirectory(moduleName, configuredPath, "子文件夹 Bundle 根目录");
+                    string rootAssetDirectory = ResolveAssetDirectory(moduleName, configuredPath, "子目录分包根目录");
                     //00 先登记根目录，使目录前缀重叠检查覆盖尚且为空的子目录。
-                    RegisterRuleDirectoryOwnership(moduleName, "子文件夹 Bundle 根目录", rootAssetDirectory, moduleRootDirectory, directoryOwners);
+                    RegisterRuleDirectoryOwnership(moduleName, "子目录分包根目录", rootAssetDirectory, moduleRootDirectory, directoryOwners);
                     //00 与 BuildRootSubFolder 保持一致，只把直接子目录内的文件登记为显式资源。
                     string rootFullDirectory = ToFullPath(rootAssetDirectory);
                     foreach (string childDirectory in Directory.GetDirectories(rootFullDirectory).OrderBy(path => path, StringComparer.Ordinal))
@@ -446,12 +446,12 @@ namespace ZM.Asset
                         //00 子目录仍由根目录的唯一拥有者覆盖，不再重复登记 DirectoryOwner。
                         string childAssetDirectory = ToAssetPath(moduleName, childDirectory);
                         //00 子文件夹中的 Unity 资源都需要检查递归依赖，避免 Scene/Material 等非 Prefab 入口漏检。
-                        CollectDirectoryAssets(moduleName, "子文件夹 Bundle", childAssetDirectory, true, explicitAssets, entryOwners, crcPaths);
+                        CollectDirectoryAssets(moduleName, "子目录分包", childAssetDirectory, true, explicitAssets, entryOwners, crcPaths);
                     }
                 }
             }
 
-            //00 Prefab 搜索目录拥有目录中的所有资源，但只有搜索到的 Prefab 是本规则的显式入口。
+            //00 预制体分包目录拥有目录中的所有资源，但只有搜索到的 Prefab 是本规则的显式入口。
             if (module.prefabPathArr != null)
             {
                 foreach (string configuredPath in module.prefabPathArr)
@@ -459,9 +459,9 @@ namespace ZM.Asset
                     //00 兼容旧配置中的空数组项，避免 FindAssets 意外扫描整个工程。
                     if (string.IsNullOrWhiteSpace(configuredPath)) continue;
                     //00 物理目录所有权与 Prefab 是否被找到无关，即使空目录也不能被另一个模块嵌套声明。
-                    string assetDirectory = ResolveAssetDirectory(moduleName, configuredPath, "Prefab 搜索目录");
+                    string assetDirectory = ResolveAssetDirectory(moduleName, configuredPath, "预制体分包目录");
                     //00 登记整个目录，确保 Prefab 的 Entry=false 材质和纹理仍被判定为当前模块资源。
-                    RegisterRuleDirectoryOwnership(moduleName, "Prefab 搜索目录", assetDirectory, moduleRootDirectory, directoryOwners);
+                    RegisterRuleDirectoryOwnership(moduleName, "预制体分包目录", assetDirectory, moduleRootDirectory, directoryOwners);
                     //00 FindAssets 返回 GUID 顺序没有稳定契约，因此转换路径后排序以获得可复现诊断。
                     IEnumerable<string> prefabPaths = AssetDatabase.FindAssets("t:Prefab", new[] { assetDirectory })
                         .Select(AssetDatabase.GUIDToAssetPath)
@@ -489,7 +489,7 @@ namespace ZM.Asset
                 }
             }
 
-            //00 源文件规则负责原样复制，不调用 Unity 依赖解析，但目录仍必须拥有唯一物理归属。
+            //00 源文件复制规则负责原样复制，不调用 Unity 依赖解析，但目录仍必须拥有唯一物理归属。
             if (module.sourceFolderPathArr != null)
             {
                 foreach (string configuredPath in module.sourceFolderPathArr)
@@ -497,28 +497,28 @@ namespace ZM.Asset
                     //00 空源文件路径按未配置处理，保持与当前构建器行为一致。
                     if (string.IsNullOrWhiteSpace(configuredPath)) continue;
                     //00 源文件目录也不能与其他规则相等或嵌套，否则同一路径会产生二义归属。
-                    string assetDirectory = ResolveAssetDirectory(moduleName, configuredPath, "源文件目录");
+                    string assetDirectory = ResolveAssetDirectory(moduleName, configuredPath, "源文件复制目录");
                     //00 登记源文件目录的物理拥有者，供其他 Unity 资源依赖它时识别归属。
-                    RegisterRuleDirectoryOwnership(moduleName, "源文件规则", assetDirectory, moduleRootDirectory, directoryOwners);
+                    RegisterRuleDirectoryOwnership(moduleName, "源文件复制规则", assetDirectory, moduleRootDirectory, directoryOwners);
                     //00 false 明确表示源文件本身不触发 AssetDatabase.GetDependencies。
-                    CollectDirectoryAssets(moduleName, "源文件规则", assetDirectory, false, explicitAssets, entryOwners, crcPaths);
+                    CollectDirectoryAssets(moduleName, "源文件复制规则", assetDirectory, false, explicitAssets, entryOwners, crcPaths);
                 }
             }
 
-            //00 单文件包规则：目录完整所有权 + 排除 .prefab，避免与 Prefab 规则重叠登记。
+            //00 逐文件分包规则：目录完整所有权 + 排除 .prefab，避免与 Prefab 规则重叠登记。
             if (module.singleFilePathArr != null)
             {
                 foreach (string configuredPath in module.singleFilePathArr)
                 {
                     //00 空配置槽按未配置处理，避免占位符进入文件系统 API。
                     if (string.IsNullOrWhiteSpace(configuredPath)) continue;
-                    string assetDirectory = ResolveAssetDirectory(moduleName, configuredPath, "单文件包目录");
+                    string assetDirectory = ResolveAssetDirectory(moduleName, configuredPath, "逐文件分包目录");
                     //00 登记目录所有权，自动参与目录重叠检查。
-                    RegisterRuleDirectoryOwnership(moduleName, "单文件包规则", assetDirectory, moduleRootDirectory, directoryOwners);
+                    RegisterRuleDirectoryOwnership(moduleName, "逐文件分包规则", assetDirectory, moduleRootDirectory, directoryOwners);
                     //00 目录内每个可打包文件都是显式入口；依赖检查开启，跨模块引用在构建期失败。
                     CollectDirectoryAssets(
                         moduleName,
-                        "单文件包规则",
+                        "逐文件分包规则",
                         assetDirectory,
                         true,
                         explicitAssets,
@@ -637,7 +637,7 @@ namespace ZM.Asset
                 string assetPath = ToAssetPath(moduleName, filePath);
                 //00 C# 脚本和 meta 文件不会进入 AssetBundleBuild.assetNames，因此不参与 Entry 和 CRC 登记。
                 if (!IsBundleableAssetPath(assetPath)) continue;
-                //00 可选过滤：单文件包规则排除 .prefab，其他规则不传参数则保持原行为。
+                //00 可选过滤：逐文件分包规则排除 .prefab，其他规则不传参数则保持原行为。
                 if (extraFilter != null && !extraFilter(assetPath)) continue;
                 //00 登记后由统一逻辑处理重复规则、CRC 碰撞和依赖检查起点。
                 RegisterExplicitAsset(moduleName, ruleName, assetPath, inspectUnityDependencies, explicitAssets, entryOwners, crcPaths);

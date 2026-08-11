@@ -277,7 +277,7 @@ public class BundleBehaviour
         int count = module.prefabPathArr?.Length ?? 0;
         count += module.rootFolderPathArr?.Length ?? 0;
         count += module.signFolderPathArr?.Length ?? 0;
-        //00 修复历史遗漏：源文件规则未计入卡片统计；单文件包规则同样需要计入。
+        //00 修复历史遗漏：源文件复制规则未计入卡片统计；逐文件分包规则同样需要计入。
         count += module.sourceFolderPathArr?.Length ?? 0;
         count += module.singleFilePathArr?.Length ?? 0;
         return count;

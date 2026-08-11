@@ -86,7 +86,7 @@ namespace ZM.Asset
         private Dictionary<string, List<string>> mAllPrefabsBundleDic => mContext.PrefabBundles;
 
         /// <summary>
-        /// 00 单文件包 Bundle 字典：目录下每个可打包文件独占一个 Bundle。
+        /// 00 逐文件分包 Bundle 字典：目录下每个可打包文件独占一个 Bundle。
         /// </summary>
         private Dictionary<string, List<string>> mSingleFileBundleDic => mContext.SingleFileBundles;
         /// <summary>
@@ -106,7 +106,7 @@ namespace ZM.Asset
         private HashSet<string> mExplicitEntryPathSet => mContext.ExplicitEntryPaths;
 
         /// <summary>
-        /// 源文件规则的稳定快照
+        /// 源文件复制规则的稳定快照
         /// 写配置和构建后复制必须消费同一份快照，避免两次扫描之间文件变化导致配置与产物不一致。
         /// </summary>
         private List<SourceBuildEntry> mSourceEntryList => mContext.SourceEntries;
@@ -187,7 +187,7 @@ namespace ZM.Asset
                     sharedStagingPath,
                     false))
                 throw new InvalidOperationException($"模块 {moduleData?.moduleName} 初始化失败。");
-            //00 用户显式声明的单文件包先于 Prefab 自动依赖分配，让 Prefab 只建立跨 Bundle 依赖而不重复收纳资源。
+            //00 用户显式声明的逐文件分包先于 Prefab 自动依赖分配，让 Prefab 只建立跨 Bundle 依赖而不重复收纳资源。
             BuildAllFolder();
             BuildRootSubFolder();
             BuildAllSingleFiles();
@@ -473,8 +473,8 @@ namespace ZM.Asset
                 //获取文件夹路径
                 BundleFileInfo bundleFileInfo = mBuildModuleData.signFolderPathArr[i];
                 if (bundleFileInfo == null || string.IsNullOrWhiteSpace(bundleFileInfo.bundlePath)) continue;
-                string path = ValidateConfiguredDirectory(bundleFileInfo.bundlePath, "文件夹包目录");
-                ZMBuildProgress.Report("分析文件夹包", mBuildModuleData.signFolderPathArr[i].abName, .10f + .10f * i / mBuildModuleData.signFolderPathArr.Length);
+                string path = ValidateConfiguredDirectory(bundleFileInfo.bundlePath, "整目录打包目录");
+                ZMBuildProgress.Report("分析整目录打包", mBuildModuleData.signFolderPathArr[i].abName, .10f + .10f * i / mBuildModuleData.signFolderPathArr.Length);
  
                 DirectoryInfo info = new DirectoryInfo(path);
                 FileInfo[] pathArr = info.GetFiles("*", SearchOption.AllDirectories); ;
@@ -514,7 +514,7 @@ namespace ZM.Asset
             for (int i = 0; i < mBuildModuleData.rootFolderPathArr.Length; i++)
             {
                 if (string.IsNullOrWhiteSpace(mBuildModuleData.rootFolderPathArr[i])) continue;
-                string path = ValidateConfiguredDirectory(mBuildModuleData.rootFolderPathArr[i], "子文件夹 Bundle 根目录");
+                string path = ValidateConfiguredDirectory(mBuildModuleData.rootFolderPathArr[i], "子目录分包根目录");
                 //获取父文夹的所有的子文件夹
                 string[] folderArr = Directory.GetDirectories(path);
                 foreach (var item in folderArr)
@@ -556,7 +556,7 @@ namespace ZM.Asset
         /// </summary>
         private void BuildAllPrefabs()
         {
-            //00 未配置 Prefab 搜索目录时，本阶段没有任何 Entry 和依赖需要分析，直接结束。
+            //00 未配置预制体分包目录时，本阶段没有任何 Entry 和依赖需要分析，直接结束。
             if (mBuildModuleData.prefabPathArr == null || mBuildModuleData.prefabPathArr.Length == 0)
             {
                 return;
@@ -568,7 +568,7 @@ namespace ZM.Asset
                 //00 配置数组可能来自旧序列化数据，空项按“未配置”处理，而不是访问文件系统。
                 if (string.IsNullOrWhiteSpace(configuredPath)) continue;
                 //00 先验证真实目录，再统一转换成 Assets/... 形式，保证后续路径比较使用同一格式。
-                prefabSearchFolders.Add(ToAssetPath(ValidateConfiguredDirectory(configuredPath, "Prefab 搜索目录")));
+                prefabSearchFolders.Add(ToAssetPath(ValidateConfiguredDirectory(configuredPath, "预制体分包目录")));
             }
             //00 全部配置项都为空时，不调用 AssetDatabase.FindAssets，避免无意扫描整个工程。
             if (prefabSearchFolders.Count == 0) return;
@@ -605,10 +605,10 @@ namespace ZM.Asset
             HashSet<string> occupiedBundleNames = new HashSet<string>(
                 mAllFolderBundleDic.Keys.Concat(mSingleFileBundleDic.Keys),
                 StringComparer.OrdinalIgnoreCase);
-            //00 Prefab 收集前的显式 Bundle 必须在同一命名域中唯一，禁止单文件包与文件夹包被后续 Prefab 覆盖。
+            //00 Prefab 收集前的显式 Bundle 必须在同一命名域中唯一，禁止逐文件分包与整目录打包被后续 Prefab 覆盖。
             if (occupiedBundleNames.Count != mAllFolderBundleDic.Count + mSingleFileBundleDic.Count)
                 throw new InvalidOperationException(
-                    $"模块 {_mBundleModuleName} 存在忽略大小写后重复的文件夹/单文件 Bundle 名称。");
+                    $"模块 {_mBundleModuleName} 存在忽略大小写后重复的整目录打包/逐文件分包 Bundle 名称。");
 
             //00 第一阶段继续：为每个 Prefab 建立稳定 Bundle 名、依赖快照和完整消费者集合。
             foreach (string prefabPath in prefabPaths)
@@ -619,7 +619,7 @@ namespace ZM.Asset
                 if (!occupiedBundleNames.Add(bundleName))
                     throw new InvalidOperationException(
                         $"模块 {_mBundleModuleName} 存在重复 Bundle 名称：{bundleName}，" +
-                        "请调整同名 Prefab、单文件包或文件夹 Bundle 名称。");
+                        "请调整同名预制体分包、逐文件分包或整目录打包 Bundle 名称。");
 
                 //00 保存路径和 Bundle 名的稳定映射，供第二阶段生成 mAllPrefabsBundleDic。
                 prefabBundleNames.Add(prefabPath, bundleName);
@@ -770,11 +770,11 @@ namespace ZM.Asset
         }
 
         /// <summary>
-        /// 00 单文件包规则：目录下每个可打包资源文件（排除 .cs/.meta/.prefab）单独成为一个 Bundle。
+        /// 00 逐文件分包规则：目录下每个可打包资源文件（排除 .cs/.meta/.prefab）单独成为一个 Bundle。
         /// </summary>
         private void BuildAllSingleFiles()
         {
-            //00 未配置单文件包目录时跳过；旧序列化配置缺字段为 null。
+            //00 未配置逐文件分包目录时跳过；旧序列化配置缺字段为 null。
             if (mBuildModuleData.singleFilePathArr == null || mBuildModuleData.singleFilePathArr.Length == 0)
             {
                 return;
@@ -796,7 +796,7 @@ namespace ZM.Asset
             {
                 //00 兼容旧配置中的空数组项，不访问文件系统。
                 if (string.IsNullOrWhiteSpace(configuredPath)) continue;
-                string directory = ValidateConfiguredDirectory(configuredPath, "单文件包目录");
+                string directory = ValidateConfiguredDirectory(configuredPath, "逐文件分包目录");
                 //00 Directory.GetFiles 的返回顺序不受 API 契约保证；固定 Ordinal 排序，避免不同机器产生不同的 Bundle 列表、配置 JSON 与热更清单顺序。
                 IEnumerable<string> orderedFiles = Directory.GetFiles(directory, "*", SearchOption.AllDirectories)
                     .OrderBy(path => path, StringComparer.Ordinal);
@@ -811,14 +811,14 @@ namespace ZM.Asset
                     {
                         continue;
                     }
-                    //00 单文件包被显式配置就必须实际独占一个 Bundle；静默跳过会让开发者误以为配置已生效，改为在构建边界给出可操作错误。
+                    //00 逐文件分包被显式配置就必须实际独占一个 Bundle；静默跳过会让开发者误以为配置已生效，改为在构建边界给出可操作错误。
                     if (assignedPaths.Contains(assetPath))
                     {
                         throw new InvalidOperationException(
-                            $"模块 {_mBundleModuleName} 的单文件包资源已被前置规则占用：{assetPath}\n" +
+                            $"模块 {_mBundleModuleName} 的逐文件分包资源已被前置规则占用：{assetPath}\n" +
                             $"现有归属：{DescribeExistingBundleOwner(assetPath)}\n" +
-                            $"单文件包目录：{configuredPath}\n" +
-                            "请移除重叠的文件夹/Prefab/单文件包规则，确保该资源只由一条规则分配。");
+                            $"逐文件分包目录：{configuredPath}\n" +
+                            "请移除重叠的整目录打包/预制体分包/逐文件分包规则，确保该资源只由一条规则分配。");
                     }
 
                     //00 Bundle 名沿用“模块名_文件名”规则，与 Prefab 和文件夹产物保持同构。
@@ -827,8 +827,8 @@ namespace ZM.Asset
                     if (!occupiedBundleNames.Add(bundleName))
                     {
                         throw new InvalidOperationException(
-                            $"模块 {_mBundleModuleName} 的单文件包存在重复 Bundle 名称：{bundleName}，" +
-                            "请调整同名文件或检查与文件夹/Prefab 规则的名称冲突。");
+                            $"模块 {_mBundleModuleName} 的逐文件分包存在重复 Bundle 名称：{bundleName}，" +
+                            "请调整同名文件，或检查与整目录打包/预制体分包规则的名称冲突。");
                     }
 
                     //00 每个文件都是可加载入口，运行时可按路径直接加载。
@@ -843,24 +843,24 @@ namespace ZM.Asset
         }
 
         /// <summary>
-        /// 00 为单文件包重叠错误定位已占用该资源的 Bundle 来源；仅在构建失败路径执行，不影响正常构建性能。
+        /// 00 为逐文件分包重叠错误定位已占用该资源的 Bundle 来源；仅在构建失败路径执行，不影响正常构建性能。
         /// </summary>
         private string DescribeExistingBundleOwner(string assetPath)
         {
-            //00 文件夹包、Prefab 包与前面已经扫描的单文件包都可能成为先占用者，逐一查询能让报错直接指向应删除的规则。
+            //00 整目录打包、预制体分包与前面已经扫描的逐文件分包都可能成为先占用者，逐一查询能让报错直接指向应删除的规则。
             foreach (KeyValuePair<string, List<string>> bundle in mAllFolderBundleDic)
             {
-                if (bundle.Value.Contains(assetPath)) return $"文件夹包 {bundle.Key}";
+                if (bundle.Value.Contains(assetPath)) return $"整目录打包 {bundle.Key}";
             }
 
             foreach (KeyValuePair<string, List<string>> bundle in mAllPrefabsBundleDic)
             {
-                if (bundle.Value.Contains(assetPath)) return $"Prefab 包 {bundle.Key}";
+                if (bundle.Value.Contains(assetPath)) return $"预制体分包 {bundle.Key}";
             }
 
             foreach (KeyValuePair<string, List<string>> bundle in mSingleFileBundleDic)
             {
-                if (bundle.Value.Contains(assetPath)) return $"单文件包 {bundle.Key}";
+                if (bundle.Value.Contains(assetPath)) return $"逐文件分包 {bundle.Key}";
             }
 
             //00 兜底覆盖自动 Shared 分片等不属于上述三类字典的前置分配，避免异常消息留空。
@@ -1184,7 +1184,7 @@ namespace ZM.Asset
             foreach (string configuredPath in mBuildModuleData.sourceFolderPathArr)
             {
                 if (string.IsNullOrWhiteSpace(configuredPath)) continue;
-                string path = ValidateConfiguredDirectory(configuredPath, "源文件目录");
+                string path = ValidateConfiguredDirectory(configuredPath, "源文件复制目录");
                 foreach (string fullPath in Directory.GetFiles(path, "*", SearchOption.AllDirectories))
                 {
                     string assetPath = ToAssetPath(fullPath);
@@ -1433,7 +1433,7 @@ namespace ZM.Asset
                 ZMBuildProgress.Report("生成构建列表", item.Key, .42f + .04f * i / Mathf.Max(1, mAllPrefabsBundleDic.Count));
                 mBundleBuildList.Add(new AssetBundleBuild(){ assetBundleName = CreatePhysicalBundleFileName(item.Key), assetNames = item.Value.ToArray() });
             }
-            //收集所有要打包的单文件包Bundle
+            //收集所有要打包的逐文件分包 Bundle
             i = 0;
             foreach (var item in mSingleFileBundleDic)
             {
