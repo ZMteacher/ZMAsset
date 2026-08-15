@@ -23,17 +23,47 @@ using UnityEngine.Networking;
 
 namespace ZM.Asset
 {
+    public enum HotUpdateStage
+    {
+        Idle,
+        CheckingVersion,
+        Downloading,
+        Verifying,
+        Committing,
+        Initializing,
+        Succeeded,
+        Failed,
+        Canceled
+    }
+
     /// <summary>
     /// 热更新模块的只读状态快照，避免业务层直接操作 HotAssetsModule 内部生命周期。
     /// </summary>
     public sealed class HotAssetsModuleState
     {
         public string BundleModule { get; internal set; }
-        public bool IsHotUpdateRunning { get; internal set; }
+        public string OperationId { get; internal set; }
+        public HotUpdateStage Stage { get; internal set; }
         public bool IsAssetModuleInitialized { get; internal set; }
+        public int TotalFileCount { get; internal set; }
+        public int CompletedFileCount { get; internal set; }
+        public long TotalBytes { get; internal set; }
+        public long DownloadedBytes { get; internal set; }
+        public string UpdateNoticeContent { get; internal set; }
+        public string ErrorMessage { get; internal set; }
+
+        public float DownloadProgress => TotalBytes <= 0
+            ? 0f
+            : Mathf.Clamp01((float)((double)DownloadedBytes / TotalBytes));
+        public bool IsTerminal => Stage == HotUpdateStage.Succeeded ||
+                                  Stage == HotUpdateStage.Failed ||
+                                  Stage == HotUpdateStage.Canceled;
+
+        // 兼容旧版状态读取 API；新代码应优先使用 Stage、字节数和文件数。
+        public bool IsHotUpdateRunning => Stage != HotUpdateStage.Idle && !IsTerminal;
         public int HotAssetCount { get; internal set; }
-        public int NeedDownloadAssetCount { get; internal set; }
-        public float DownloadedSizeM { get; internal set; }
+        public int NeedDownloadAssetCount => TotalFileCount;
+        public float DownloadedSizeM => DownloadedBytes / 1024f / 1024f;
     }
 
     /// <summary>
@@ -41,6 +71,14 @@ namespace ZM.Asset
     /// </summary>
     public class HotAssetsModule
     {
+        public event Action<HotAssetsModuleState> StateChanged;
+
+        private string mOperationId;
+        private HotUpdateStage mStage = HotUpdateStage.Idle;
+        private int mCompletedFileCount;
+        private long mTotalBytes;
+        private string mStateErrorMessage;
+        private int mProgressStateDirty;
         /// <summary>
         /// 当前应用版本
         /// </summary>
@@ -178,6 +216,7 @@ namespace ZM.Asset
             // 模块内部同样只允许一个真实任务，后续调用仅加入完成等待列表。
             if (mIsHotUpdateRunning)
                 return;
+            BeginOperation(isCheckAssetsVersion ? HotUpdateStage.CheckingVersion : HotUpdateStage.Downloading);
             mIsHotUpdateRunning = true;
             if (isCheckAssetsVersion)
             {
@@ -211,6 +250,7 @@ namespace ZM.Asset
                 throw new InvalidOperationException($"模块 {CurBundleModuleName} 已有热更新任务正在执行。");
 
             mIsHotUpdateRunning = true;
+            BeginOperation(isCheckAssetsVersion ? HotUpdateStage.CheckingVersion : HotUpdateStage.Downloading);
             mIsCoordinatedTransaction = true;
             mCoordinatedHasChanges = false;
             mWasInitializedBeforeCoordinatedTransaction =
@@ -255,6 +295,9 @@ namespace ZM.Asset
         {
             // 每次真实下载都从零开始统计，重复热更同一模块不会沿用上一次进度。
             Interlocked.Exchange(ref mAssetsDownloadedBytes, 0L);
+            mCompletedFileCount = 0;
+            mTotalBytes = CalculateDownloadBytes();
+            SetStage(HotUpdateStage.Downloading);
             //优先下载AssetBUndle配置文件，下载完成后呢，调用回调，让开发者及时加载配置文件
             //热更资源下载完成之后同样给与回调，供开发者动态加载刚下载完成的资源
             List<HotFileInfo> downLoadList = new List<HotFileInfo>();
@@ -952,6 +995,8 @@ namespace ZM.Asset
         private void DownLoadAssetBundleSuccess(HotFileInfo hotFile)
         {
             // 单文件成功只代表临时快照中的文件通过校验，业务通知必须等待整批事务提交。
+            mCompletedFileCount = Math.Min(mCompletedFileCount + 1, mNeedDownLoadAssetsList.Count);
+            PublishStateChanged();
         }
 
         /// <summary>
@@ -960,6 +1005,9 @@ namespace ZM.Asset
         public async void DownLoadAssetBundleFailed(HotFileInfo hotFile)
         {
             string failedFileName = hotFile == null ? "未知文件" : hotFile.abName;
+            string errorMessage = hotFile == null
+                ? $"模块 {CurBundleModuleName} 热更新失败。"
+                : $"文件 {failedFileName} 下载或校验失败。";
             Debug.LogError($"模块 {CurBundleModuleName} 热更失败，文件：{failedFileName}。本地清单保持不变。");
 
             // 失败回调产生时下载队列通常已结束；仍统一等待可避免未来提前失败策略留下写文件线程。
@@ -969,6 +1017,7 @@ namespace ZM.Asset
             if (mIsCoordinatedTransaction)
             {
                 mIsHotUpdateRunning = false;
+                SetTerminalStage(HotUpdateStage.Failed, errorMessage);
                 mCoordinatedFailedCallback?.Invoke(this, hotFile, null);
                 return;
             }
@@ -978,6 +1027,7 @@ namespace ZM.Asset
             mAssetsDownLoader = null;
             // 失败时绝不能触发成功回调，否则业务层会把不完整版本当作可用版本。
             mIsHotUpdateRunning = false;
+            SetTerminalStage(HotUpdateStage.Failed, errorMessage);
             mPendingHotFinishCallbacks.Clear();
             OnDownLoadAllAssetsFailed?.Invoke(CurBundleModuleName, hotFile);
         }
@@ -993,11 +1043,14 @@ namespace ZM.Asset
             try
             {
                 // 最终磁盘切换前再次检查依赖图；下载期间新初始化的业务模块也能阻止 Shared 在线升级。
+                SetStage(HotUpdateStage.Verifying);
                 EnsureModuleConfigurationMutationAllowed();
                 ValidateStagedSnapshot();
+                SetStage(HotUpdateStage.Committing);
                 await PromoteStagedSnapshotAsync(true);
 
                 // 只有正式快照切换成功后才能初始化配置；已初始化模块也必须安全重载，禁止磁盘与内存版本分叉。
+                SetStage(HotUpdateStage.Initializing);
                 bool moduleAlreadyInitialized = AssetBundleManager.Instance.IsAssetModuleInitialized(CurBundleModuleName);
                 
                 bool initializeSucceeded = moduleAlreadyInitialized ? await AssetBundleManager.Instance.ReloadAssetModule(CurBundleModuleName) : await ZMAsset.Modules.InitializeAsync(CurBundleModuleName);
@@ -1031,6 +1084,7 @@ namespace ZM.Asset
 
             try
             {
+                SetStage(HotUpdateStage.Verifying);
                 ValidateStagedSnapshot();
                 mCoordinatedHasChanges = true;
                 mCoordinatedPreparedCallback?.Invoke(this, true);
@@ -1049,6 +1103,7 @@ namespace ZM.Asset
         {
             if (!mIsCoordinatedTransaction)
                 throw new InvalidOperationException($"模块 {CurBundleModuleName} 未处于多模块事务模式。");
+            SetStage(HotUpdateStage.Committing);
             if (mCoordinatedHasChanges)
                 await PromoteStagedSnapshotAsync(false);
         }
@@ -1060,6 +1115,7 @@ namespace ZM.Asset
         /// </summary>
         internal async UniTask<bool> InitializeCoordinatedTransaction()
         {
+            SetStage(HotUpdateStage.Initializing);
             bool isInitialized = AssetBundleManager.Instance.IsAssetModuleInitialized(CurBundleModuleName);
             if (isInitialized && mCoordinatedHasChanges)
                 return await AssetBundleManager.Instance.ReloadAssetModule(CurBundleModuleName);
@@ -1081,13 +1137,13 @@ namespace ZM.Asset
                     ResetTransactionState();
                 DispatchCommittedFileCallbacks();
             }
-            ResetCoordinatedState();
+            ResetCoordinatedState(HotUpdateStage.Succeeded);
         }
 
         /// <summary>
         /// 先等待后台下载退出，再恢复磁盘；已在本事务中新初始化的模块同时撤销内存配置。
         /// </summary>
-        internal async UniTask RollbackCoordinatedTransaction()
+        internal async UniTask RollbackCoordinatedTransaction(bool isCanceled, string errorMessage)
         {
             if (mAssetsDownLoader != null)
                 await mAssetsDownLoader.CancelAndWaitAsync();
@@ -1113,7 +1169,9 @@ namespace ZM.Asset
                     throw new InvalidOperationException($"模块 {CurBundleModuleName} 回滚后恢复旧配置失败。");
             }
 
-            ResetCoordinatedState();
+            ResetCoordinatedState(
+                isCanceled ? HotUpdateStage.Canceled : HotUpdateStage.Failed,
+                errorMessage);
         }
 
         /// <summary>
@@ -1131,7 +1189,9 @@ namespace ZM.Asset
             ResetTransactionState();
         }
 
-        private void ResetCoordinatedState()
+        private void ResetCoordinatedState(
+            HotUpdateStage terminalStage = HotUpdateStage.Idle,
+            string errorMessage = null)
         {
             // 递增代次使仍在网络中的旧版本检查回调永久失效。
             mCoordinatedOperationId++;
@@ -1142,6 +1202,10 @@ namespace ZM.Asset
             mCoordinatedFailedCallback = null;
             mAssetsDownLoader?.Dispose();
             mAssetsDownLoader = null;
+            if (terminalStage != HotUpdateStage.Idle)
+                SetTerminalStage(
+                    terminalStage,
+                    errorMessage ?? (terminalStage == HotUpdateStage.Canceled ? "热更新事务已取消。" : null));
         }
 
         /// <summary>
@@ -1150,7 +1214,10 @@ namespace ZM.Asset
         internal void AddDownloadedBytes(int byteCount)
         {
             if (byteCount > 0)
+            {
                 Interlocked.Add(ref mAssetsDownloadedBytes, byteCount);
+                Interlocked.Exchange(ref mProgressStateDirty, 1);
+            }
         }
 
         /// <summary>
@@ -1160,6 +1227,7 @@ namespace ZM.Asset
         {
             try
             {
+                SetStage(HotUpdateStage.Initializing);
                 if (!AssetBundleManager.Instance.IsAssetModuleInitialized(CurBundleModuleName))
                 {
                     bool initializeSucceeded = await ZMAsset.Modules.InitializeAsync(CurBundleModuleName);
@@ -1442,6 +1510,7 @@ namespace ZM.Asset
             mAssetsDownLoader?.Dispose();
             mAssetsDownLoader = null;
             mIsHotUpdateRunning = false;
+            SetTerminalStage(HotUpdateStage.Succeeded, null);
             OnDownLoadAllAssetsFinish?.Invoke(CurBundleModuleName);
             Action<string>[] callbacks = mPendingHotFinishCallbacks.ToArray();
             mPendingHotFinishCallbacks.Clear();
@@ -1453,6 +1522,79 @@ namespace ZM.Asset
         public void OnMainThreadUpdate()
         {
             mAssetsDownLoader?.UpdateOnMainThread();
+            if (Interlocked.Exchange(ref mProgressStateDirty, 0) != 0)
+                PublishStateChanged();
+        }
+
+        internal HotAssetsModuleState GetStateSnapshot()
+        {
+            return new HotAssetsModuleState
+            {
+                OperationId = mOperationId,
+                BundleModule = CurBundleModuleName,
+                Stage = mStage,
+                HotAssetCount = mAllHotAssetsList.Count,
+                TotalFileCount = mNeedDownLoadAssetsList.Count,
+                CompletedFileCount = mCompletedFileCount,
+                TotalBytes = mTotalBytes,
+                DownloadedBytes = Math.Min(Interlocked.Read(ref mAssetsDownloadedBytes), mTotalBytes > 0 ? mTotalBytes : long.MaxValue),
+                UpdateNoticeContent = UpdateNoticeContent,
+                ErrorMessage = mStateErrorMessage,
+                IsAssetModuleInitialized = AssetBundleManager.Instance.IsAssetModuleInitialized(CurBundleModuleName)
+            };
+        }
+
+        private void BeginOperation(HotUpdateStage initialStage)
+        {
+            mOperationId = Guid.NewGuid().ToString("N");
+            mCompletedFileCount = 0;
+            mTotalBytes = 0;
+            mStateErrorMessage = null;
+            Interlocked.Exchange(ref mAssetsDownloadedBytes, 0L);
+            SetStage(initialStage);
+        }
+
+        private void SetStage(HotUpdateStage stage)
+        {
+            mStage = stage;
+            if (stage != HotUpdateStage.Failed)
+                mStateErrorMessage = null;
+            PublishStateChanged();
+        }
+
+        private void SetTerminalStage(HotUpdateStage stage, string errorMessage)
+        {
+            mStage = stage;
+            mStateErrorMessage = errorMessage;
+            PublishStateChanged();
+        }
+
+        private long CalculateDownloadBytes()
+        {
+            double totalBytes = 0d;
+            foreach (HotFileInfo file in mNeedDownLoadAssetsList)
+                totalBytes += Math.Max(0d, file.size) * 1024d;
+            return totalBytes >= long.MaxValue ? long.MaxValue : (long)Math.Ceiling(totalBytes);
+        }
+
+        private void PublishStateChanged()
+        {
+            Action<HotAssetsModuleState> handlers = StateChanged;
+            if (handlers == null)
+                return;
+
+            HotAssetsModuleState snapshot = GetStateSnapshot();
+            foreach (Action<HotAssetsModuleState> handler in handlers.GetInvocationList())
+            {
+                try
+                {
+                    handler(snapshot);
+                }
+                catch (Exception exception)
+                {
+                    Debug.LogError($"模块 {CurBundleModuleName} 状态监听器执行异常：{exception}");
+                }
+            }
         }
         /// <summary>
         /// 设置下载线程个数

@@ -19,6 +19,9 @@ namespace ZM.Asset
 {
     public interface IHotAssets
     {
+        /// <summary>模块热更新状态发生变化时，在 Unity 主线程发送只读快照。</summary>
+        event Action<HotAssetsModuleState> StateChanged;
+
         /// <summary>
         /// 开始热更
         /// </summary>

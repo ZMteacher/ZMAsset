@@ -12,6 +12,12 @@ namespace ZM.Asset
         /// </summary>
         public static class HotUpdate
         {
+            /// <summary>热更新阶段或下载进度变化时发送当前模块的只读状态快照。</summary>
+            public static event Action<HotAssetsModuleState> StateChanged
+            {
+                add => InitializedInstance.mHotAssets.StateChanged += value;
+                remove => InitializedInstance.mHotAssets.StateChanged -= value;
+            }
             
             /// <summary>
             /// 检测模块资源版本；只有 ConfirmedNoUpdate 或 UpdateAvailable 才代表远端确认成功，UnableToConfirm 时调用方必须阻止继续进入业务。

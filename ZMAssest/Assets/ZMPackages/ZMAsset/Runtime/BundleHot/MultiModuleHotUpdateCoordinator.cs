@@ -218,7 +218,9 @@ namespace ZM.Asset
                     try
                     {
                         mManager.DeactivateCoordinatedModule(modules[index]);
-                        await modules[index].RollbackCoordinatedTransaction();
+                        await modules[index].RollbackCoordinatedTransaction(
+                            isCancelled,
+                            isCancelled ? "热更新事务已取消。" : exception.Message);
                     }
                     catch (Exception rollbackException)
                     {

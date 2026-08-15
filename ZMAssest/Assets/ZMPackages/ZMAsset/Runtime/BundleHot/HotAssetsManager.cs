@@ -37,6 +37,7 @@ namespace ZM.Asset
 
     public class HotAssetsManager : IHotAssets
     {
+        public event Action<HotAssetsModuleState> StateChanged;
         /// <summary>
         /// 最大并发下载线程个数
         /// </summary>
@@ -382,6 +383,7 @@ namespace ZM.Asset
             else
             {
                 assetsModule = new HotAssetsModule(bundleModule,ZMAsset.Instance);
+                assetsModule.StateChanged += ForwardModuleStateChanged;
                 mAllAssetsModuleDic.Add(bundleModule, assetsModule);
             }
             return assetsModule;
@@ -456,15 +458,26 @@ namespace ZM.Asset
             if (module == null)
                 return null;
 
-            return new HotAssetsModuleState
+            return module.GetStateSnapshot();
+        }
+
+        private void ForwardModuleStateChanged(HotAssetsModuleState state)
+        {
+            Action<HotAssetsModuleState> handlers = StateChanged;
+            if (handlers == null)
+                return;
+
+            foreach (Action<HotAssetsModuleState> handler in handlers.GetInvocationList())
             {
-                BundleModule = module.CurBundleModuleName,
-                IsHotUpdateRunning = module.IsHotUpdateRunning,
-                IsAssetModuleInitialized = AssetBundleManager.Instance.IsAssetModuleInitialized(bundleModule),
-                HotAssetCount = module.HotAssetCount,
-                NeedDownloadAssetCount = module.mNeedDownLoadAssetsList.Count,
-                DownloadedSizeM = module.AssetsDownLoadSizeM
-            };
+                try
+                {
+                    handler(state);
+                }
+                catch (Exception exception)
+                {
+                    Debug.LogError($"模块 {state.BundleModule} 状态监听器执行异常：{exception}");
+                }
+            }
         }
         /// <summary>
         /// 热更模块资源完成
